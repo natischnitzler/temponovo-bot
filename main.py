@@ -218,60 +218,11 @@ NOMBRES_CATALOGOS = {
     "zippo":                    "Catalogo_Encendedores_Zippo_Familia.pdf",
 }
 
-MENU_CATALOGOS = """📂 *Catálogos disponibles:*
+# Menú se genera dinámicamente en la función generar_menu_catalogos()
+MENU_CATALOGOS_STATIC = None  # no usado
 
-*Relojes Casio*
-1. Completo
-2. Clásico A-L
-3. Clásico M-W
-4. Despertadores
-5. Edifice & Duro
-6. G-Shock
-7. Murales
-8. Pro Trek
-
-*Relojes otros*
-9. QQ
-10. Guess
-11. Suizos
-12. Económicos
-13. Timesonic
-
-*Otros*
-14. Calculadoras Casio
-15. Calculadoras Económicas
-16. Correas Cuero
-17. Correas PU
-18. Estuches
-19. Limpieza Joyas
-20. Pilas Reloj
-21. Zippo
-
-Escribe el *número* o el *nombre* del catálogo que quieres recibir."""
-
-NUMEROS_CATALOGOS = {
-    "1":  "Catalogo_Relojes_Casio_Completo.pdf",
-    "2":  "Catalogo_Relojes_Casio_Clasico_A-L.pdf",
-    "3":  "Catalogo_Relojes_Casio_Clasico_M_W.pdf",
-    "4":  "Catalogo_Relojes_Casio_Despertadores.pdf",
-    "5":  "Catalogo_Relojes_Casio_EdificeyDuro.pdf",
-    "6":  "Catalogo_Relojes_Casio_Gshock.pdf",
-    "7":  "Catalogo_Relojes_Casio_Murales_y_Crono.pdf",
-    "8":  "Catalogo_Relojes_Casio_Protreck.pdf",
-    "9":  "Catalogo_Relojes_QQ_Familia.pdf",
-    "10": "Catalogo_Relojes_Guess.pdf",
-    "11": "Catalogo_Relojes_Suizos.pdf",
-    "12": "Catalogo_RelojesEconomicos.pdf",
-    "13": "Catalogo_Relojes_Timesonic.pdf",
-    "14": "Catalogo_Calculadoras_Casio.pdf",
-    "15": "Catalogo_Calculadoras_Economicas.pdf",
-    "16": "Catalogo_Correas_de_Cuero.pdf",
-    "17": "Catalogo_Correas_PU.pdf",
-    "18": "Catalogo_Estuches_Joyas.pdf",
-    "19": "Catalogo_LimpiezaJoyas.pdf",
-    "20": "Catalogo_Pilas_De_Reloj.pdf",
-    "21": "Catalogo_Encendedores_Zippo_Familia.pdf",
-}
+# Números se generan dinámicamente desde el JSON
+NUMEROS_CATALOGOS = {}  # se llena en generar_menu_catalogos()
 
 def normalizar_texto(texto: str) -> str:
     t = texto.lower()
@@ -326,10 +277,53 @@ BIENVENIDA = (
     "En que te puedo ayudar? 🙌"
 )
 
+NUM_EMOJIS = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟",
+              "1️⃣1️⃣","1️⃣2️⃣","1️⃣3️⃣","1️⃣4️⃣","1️⃣5️⃣","1️⃣6️⃣","1️⃣7️⃣","1️⃣8️⃣","1️⃣9️⃣","2️⃣0️⃣"]
+
+# Nombres legibles para cada archivo
+NOMBRES_LEGIBLES = {
+    "Catalogo_Relojes_Casio_Clasico_A-L.pdf":    "Relojes Casio Clásico A-L",
+    "Catalogo_Relojes_Casio_Clasico_M_W.pdf":    "Relojes Casio Clásico M-W",
+    "Catalogo_Relojes_Casio_Despertadores.pdf":  "Relojes Casio Despertadores",
+    "Catalogo_Relojes_Casio_EdificeyDuro.pdf":   "Relojes Casio Edifice & Duro",
+    "Catalogo_Relojes_Casio_Gshock.pdf":         "Relojes Casio G-Shock",
+    "Catalogo_Relojes_Casio_Murales_y_Crono.pdf":"Relojes Casio Murales",
+    "Catalogo_Relojes_Casio_Protreck.pdf":       "Relojes Casio Pro Trek",
+    "Catalogo_Relojes_QQ_Alfabeto.pdf":          "Relojes QQ (alfabético)",
+    "Catalogo_Relojes_QQ_Familia.pdf":           "Relojes QQ (familia)",
+    "Catalogo_Relojes_Guess.pdf":                "Relojes Guess",
+    "Catalogo_Relojes_Suizos.pdf":               "Relojes Suizos",
+    "Catalogo_RelojesEconomicos.pdf":            "Relojes Económicos",
+    "Catalogo_Relojes_Timesonic.pdf":            "Relojes Timesonic",
+    "Catalogo_Calculadoras_Casio.pdf":           "Calculadoras Casio",
+    "Catalogo_Calculadoras_Economicas.pdf":      "Calculadoras Económicas",
+    "Catalogo_Correas_de_Cuero.pdf":             "Correas de Cuero",
+    "Catalogo_Correas_PU.pdf":                   "Correas PU",
+    "Catalogo_Estuches_Joyas.pdf":               "Estuches Joyas",
+    "Catalogo_LimpiezaJoyas.pdf":                "Limpieza Joyas",
+    "Catalogo_Pilas_De_Reloj.pdf":               "Pilas de Reloj",
+    "Catalogo_Encendedores_Zippo.pdf":           "Encendedores Zippo (alfabético)",
+    "Catalogo_Encendedores_Zippo_Familia.pdf":   "Encendedores Zippo (familia)",
+}
+
+def generar_menu(catalogos: dict) -> tuple[str, dict]:
+    global NUMEROS_CATALOGOS
+    NUMEROS_CATALOGOS = {}
+    lineas = ["📂 *Catálogos disponibles:*
+"]
+    for i, archivo in enumerate(catalogos.keys()):
+        emoji = NUM_EMOJIS[i] if i < len(NUM_EMOJIS) else f"{i+1}."
+        nombre = NOMBRES_LEGIBLES.get(archivo, archivo.replace("_"," ").replace(".pdf",""))
+        lineas.append(f"{emoji} {nombre}")
+        NUMEROS_CATALOGOS[str(i+1)] = archivo
+    lineas.append("
+Escribe el *número* del catálogo que quieres recibir.")
+    return "\n".join(lineas)
+
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
 DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
-CATALOGO = {"catalogo","catalogos","pdf","catalogo"}
+CATALOGO = {"catalogo","catalogos","pdf"}
 
 
 class StockRequest(BaseModel):
@@ -409,10 +403,15 @@ async def whatsapp_webhook(request: Request):
             except Exception:
                 respuesta = "⚠️ Error al consultar tus facturas. Intenta de nuevo."
 
-    # Catálogos — mostrar menú
+    # Catálogos — mostrar menú dinámico
     elif palabras & CATALOGO and len(body.split()) <= 2:
-        sesiones[numero] = {**sesion, "esperando_catalogo": True}
-        respuesta = MENU_CATALOGOS
+        catalogos = await cargar_catalogos()
+        if not catalogos:
+            respuesta = "⚠️ No se pudieron cargar los catálogos. Intenta de nuevo."
+        else:
+            menu = generar_menu(catalogos)
+            sesiones[numero] = {**sesion, "esperando_catalogo": True}
+            respuesta = menu
 
     # Selección de catálogo (número o nombre)
     elif sesion.get("esperando_catalogo"):
