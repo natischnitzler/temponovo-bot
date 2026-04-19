@@ -30,7 +30,6 @@ def odoo_connect():
     models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
     return uid, models
 
-
 def normalizar_rut(rut: str) -> str:
     r = re.sub(r"[.\s]", "", rut.strip()).upper().lstrip("0") or "0"
     if "-" in r:
@@ -56,62 +55,6 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
             return {"encontrado": True, "id": p["id"], "nombre": p["name"]}
     return {"encontrado": False}
 
-def consultar_deuda(partner_id: int) -> dict:
-    uid, models = odoo_connect()
-    facturas = models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS,
-        "account.move", "search_read",
-        [[
-            ["partner_id", "=", partner_id],
-            ["move_type", "=", "out_invoice"],
-            ["payment_state", "in", ["not_paid", "partial"]],
-            ["state", "=", "posted"]
-        ]],
-        {"fields": ["name", "invoice_date_due", "amount_residual"], "limit": 20}
-    )
-    hoy = date.today().isoformat()
-    vencidas = []
-    pendientes = []
-    for f in facturas:
-        venc = f.get("invoice_date_due") or ""
-        monto = round(f["amount_residual"])
-        item = {"factura": f["name"], "monto": monto, "vencimiento": venc}
-        if venc and venc < hoy:
-            vencidas.append(item)
-        else:
-            pendientes.append(item)
-    return {"vencidas": vencidas, "pendientes": pendientes}
-
-def formatear_deuda(deuda: dict, nombre: str) -> str:
-    vencidas  = deuda["vencidas"]
-    pendientes = deuda["pendientes"]
-
-    if not vencidas and not pendientes:
-        return f"*{nombre}* no tiene facturas pendientes. Todo al dia!"
-
-    def fmt_monto(n):
-        return "$" + f"{n:,}".replace(",", ".")
-
-    lineas = []
-
-    if vencidas:
-        total_v = sum(f["monto"] for f in vencidas)
-        lineas.append(f"*Vencidas* ({len(vencidas)}) — Total: {fmt_monto(total_v)}")
-        for f in vencidas:
-            lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | vencio {f['vencimiento']}")
-
-    if pendientes:
-        total_p = sum(f["monto"] for f in pendientes)
-        if lineas:
-            lineas.append("")
-        lineas.append(f"*Por vencer* ({len(pendientes)}) — Total: {fmt_monto(total_p)}")
-        for f in pendientes:
-            lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | vence {f['vencimiento']}")
-
-    total = sum(f["monto"] for f in vencidas + pendientes)
-    lineas.append(f"\n*Total adeudado: {fmt_monto(total)}*")
-    return "\n".join(lineas)
-
 def buscar_productos(termino: str) -> list:
     uid, models = odoo_connect()
     t = termino.strip()
@@ -130,6 +73,51 @@ def buscar_productos(termino: str) -> list:
         }
         for p in resultados
     ]
+
+def consultar_deuda(partner_id: int) -> dict:
+    uid, models = odoo_connect()
+    facturas = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASS,
+        "account.move", "search_read",
+        [[
+            ["partner_id", "=", partner_id],
+            ["move_type", "=", "out_invoice"],
+            ["payment_state", "in", ["not_paid", "partial"]],
+            ["state", "=", "posted"]
+        ]],
+        {"fields": ["name", "invoice_date_due", "amount_residual"], "limit": 20}
+    )
+    hoy = date.today().isoformat()
+    vencidas, pendientes = [], []
+    for f in facturas:
+        venc = f.get("invoice_date_due") or ""
+        item = {"factura": f["name"], "monto": round(f["amount_residual"]), "vencimiento": venc}
+        (vencidas if venc and venc < hoy else pendientes).append(item)
+    return {"vencidas": vencidas, "pendientes": pendientes}
+
+def fmt_monto(n):
+    return "$" + f"{n:,}".replace(",", ".")
+
+def formatear_deuda(deuda: dict, nombre: str) -> str:
+    vencidas  = deuda["vencidas"]
+    pendientes = deuda["pendientes"]
+    if not vencidas and not pendientes:
+        return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
+    lineas = []
+    if vencidas:
+        total_v = sum(f["monto"] for f in vencidas)
+        lineas.append(f"🔴 *Vencidas* ({len(vencidas)}) — Total: {fmt_monto(total_v)}")
+        for f in vencidas:
+            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | vencio {f['vencimiento']}")
+    if pendientes:
+        total_p = sum(f["monto"] for f in pendientes)
+        if lineas: lineas.append("")
+        lineas.append(f"🟡 *Por vencer* ({len(pendientes)}) — Total: {fmt_monto(total_p)}")
+        for f in pendientes:
+            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | vence {f['vencimiento']}")
+    total = sum(f["monto"] for f in vencidas + pendientes)
+    lineas.append(f"\n💰 *Total adeudado: {fmt_monto(total)}*")
+    return "\n".join(lineas)
 
 RUIDO = {
     "casio","maxell","hay","tienen","quiero","ver","busco","buscar","necesito",
@@ -164,32 +152,36 @@ def limpiar_termino(texto: str) -> str:
 def formatear_wa(productos: list, termino: str) -> str:
     if not productos:
         return (
-            f"No encontre productos para *{termino}*.\n\n"
-            "Intenta con terminos como:\n"
-            "- _F-91_, _W-800_, _AE-1200_ (relojes)\n"
-            "- _calculadora_, _MR-27_ (calculadoras)\n"
-            "- _AA_, _AAA_, _CR2032_ (pilas)"
+            f"😕 No encontre productos para *{termino}*.\n\n"
+            "Intenta con otro termino, por ejemplo:\n"
+            "• _F-91_, _W-800_, _AE-1200_ (relojes)\n"
+            "• _calculadora_, _MR-27_ (calculadoras)\n"
+            "• _AA_, _AAA_, _CR2032_ (pilas)"
         )
-    lineas = [f"Encontre *{len(productos)} producto{'s' if len(productos) > 1 else ''}* para _{termino}_:\n"]
+    lineas = [f"📦 Encontre *{len(productos)} producto{'s' if len(productos) > 1 else ''}* para _{termino}_:\n"]
     for p in productos[:10]:
         stock_txt = f"{p['stock']} en stock" if p["stock"] > 0 else "Sin stock"
-        precio = "$" + f"{int(p['precio']):,}".replace(",", ".")
-        lineas.append(f"- *{p['nombre']}*\n  Cod: {p['codigo']} | {precio} | {stock_txt}")
+        emoji = "✅" if p["stock"] > 0 else "❌"
+        precio = fmt_monto(int(p["precio"]))
+        lineas.append(f"{emoji} *{p['nombre']}*\n   Cod: {p['codigo']} | {precio} | {stock_txt}")
     if len(productos) > 10:
-        lineas.append(f"\n_{len(productos)-10} productos mas. Refina tu busqueda para ver menos._")
+        lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu busqueda para ver menos._")
     return "\n".join(lineas)
 
 BIENVENIDA = (
-    "Hola! Bienvenido a *Temponovo*.\n\n"
-    "- Para consultar *stock* escribe el producto que buscas\n"
-    "  _ej: calculadoras, pilas AA, F-91_\n\n"
-    "- Para ver tu *deuda o hacer un pedido* escribe tu RUT\n"
-    "  _ej: 12.345.678-9_"
+    "👋 Hola! Bienvenido a *Temponovo*!\n\n"
+    "Soy Temo, tu asistente 😊 Estoy aqui para ayudarte con lo que necesites.\n\n"
+    "Puedes preguntarme por:\n"
+    "📦 *Stock y precios* — escribe el producto que buscas\n"
+    "   _ej: calculadoras, pilas AA, reloj F-91_\n\n"
+    "💳 *Tu deuda* — escribe tu RUT para ver tus facturas\n"
+    "   _ej: 12.345.678-9_\n\n"
+    "En que te puedo ayudar? 🙌"
 )
 
 SALUDOS = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA   = {"ayuda","help","menu","opciones","inicio","start"}
-DEUDA   = {"deuda","factura","facturas","debo","cobro","cuenta","saldo","pendiente","pendientes","cuanto debo","mi deuda"}
+DEUDA   = {"deuda","factura","facturas","debo","cobro","cuenta","saldo","pendiente","pendientes"}
 
 
 class StockRequest(BaseModel):
@@ -214,22 +206,20 @@ async def whatsapp_webhook(request: Request):
     palabras = set(body_norm.split())
     sesion = sesiones.get(numero, {})
 
-    # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
         if sesion.get("nombre"):
             respuesta = (
-                f"Hola de nuevo, *{sesion['nombre']}*!\n\n"
-                "- Escribe un producto para ver stock\n"
-                "- Escribe *mi deuda* para ver tus facturas"
+                f"👋 Hola de nuevo, *{sesion['nombre']}*! Que bueno verte por aca 😊\n\n"
+                "En que te puedo ayudar hoy?\n"
+                "📦 Escribe un producto para ver stock\n"
+                "💳 Escribe *mi deuda* para ver tus facturas"
             )
         else:
             respuesta = BIENVENIDA
 
-    # Ayuda
     elif palabras & AYUDA:
         respuesta = BIENVENIDA
 
-    # RUT → autenticación
     elif es_rut(body):
         rut_norm = normalizar_rut(body)
         try:
@@ -237,38 +227,40 @@ async def whatsapp_webhook(request: Request):
             if cliente["encontrado"]:
                 sesiones[numero] = {"partner_id": cliente["id"], "nombre": cliente["nombre"]}
                 respuesta = (
-                    f"Hola, *{cliente['nombre']}*!\n\n"
+                    f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
                     "Con que quieres continuar?\n"
-                    "- Escribe un producto para ver stock\n"
-                    "- Escribe *mi deuda* para ver tus facturas pendientes"
+                    "📦 Escribe un producto para ver stock\n"
+                    "💳 Escribe *mi deuda* para ver tus facturas pendientes"
                 )
             else:
                 respuesta = (
-                    f"No encontre un cliente con el RUT *{rut_norm}*.\n"
-                    "Verifica el numero o contacta a tu vendedor."
+                    f"❌ No encontre un cliente con el RUT *{rut_norm}*.\n\n"
+                    "Verifica el numero o contacta a tu vendedor directamente."
                 )
         except Exception:
-            respuesta = "Error al consultar el sistema. Intenta de nuevo."
+            respuesta = "⚠️ Hubo un error consultando el sistema. Intenta de nuevo en un momento."
 
-    # Deuda
     elif palabras & DEUDA:
         if not sesion.get("partner_id"):
-            respuesta = "Para ver tu deuda primero necesito identificarte.\nEscribe tu *RUT* y te busco en el sistema."
+            respuesta = (
+                "🔐 Para ver tu deuda primero necesito identificarte.\n\n"
+                "Escribe tu *RUT* y te busco en el sistema.\n"
+                "_ej: 12.345.678-9_"
+            )
         else:
             try:
                 deuda = consultar_deuda(sesion["partner_id"])
                 respuesta = formatear_deuda(deuda, sesion["nombre"])
             except Exception:
-                respuesta = "Error al consultar tus facturas. Intenta de nuevo."
+                respuesta = "⚠️ Error al consultar tus facturas. Intenta de nuevo."
 
-    # Búsqueda de producto
     else:
         try:
             termino = limpiar_termino(body)
             productos = buscar_productos(termino)
             respuesta = formatear_wa(productos, termino)
         except Exception:
-            respuesta = "Hubo un error consultando el sistema. Intenta de nuevo en un momento."
+            respuesta = "⚠️ Hubo un error consultando el sistema. Intenta de nuevo en un momento."
 
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
