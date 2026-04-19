@@ -1,6 +1,7 @@
 import os
 import xmlrpc.client
 import re
+import httpx
 from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,22 @@ ODOO_DB   = os.environ.get("ODOO_DB",   "cmcorpcl-temponovo-main-24490235")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_PASS = os.environ.get("ODOO_PASS", "")
 
+CATALOGOS_JSON_URL = "https://github.com/natischnitzler/temponovo_catalogos/releases/download/catalogos-latest/catalogos_links.json"
+
 sesiones = {}
+_catalogos_cache = None
+
+async def cargar_catalogos():
+    global _catalogos_cache
+    if _catalogos_cache:
+        return _catalogos_cache
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            r = await client.get(CATALOGOS_JSON_URL)
+            _catalogos_cache = r.json()
+            return _catalogos_cache
+    except:
+        return {}
 
 
 def odoo_connect():
@@ -103,15 +119,14 @@ def fmt_fecha(fecha_iso: str) -> str:
     if not fecha_iso:
         return "—"
     try:
-        d = datetime.strptime(fecha_iso, "%Y-%m-%d")
-        return d.strftime("%d/%m/%Y")
+        return datetime.strptime(fecha_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
     except:
         return fecha_iso
 
 def stock_emoji(s: int) -> str:
-    if s == 0:   return "⚫"
-    if s < 10:   return "🔴"
-    if s <= 20:  return "🟡"
+    if s == 0:  return "⚫"
+    if s < 10:  return "🔴"
+    if s <= 20: return "🟡"
     return "🟢"
 
 def stock_txt(s: int) -> str:
@@ -143,31 +158,108 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
     pendientes = deuda["pendientes"]
     if not vencidas and not pendientes:
         return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
-
     total = sum(f["monto"] for f in vencidas + pendientes)
     lineas = [f"💰 *Total adeudado: {fmt_monto(total)}*\n"]
-
     if vencidas:
         total_v = sum(f["monto"] for f in vencidas)
         lineas.append(f"🔴 *Vencidas* — {fmt_monto(total_v)}")
         for f in vencidas:
             lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
-
     if pendientes:
         total_p = sum(f["monto"] for f in pendientes)
         if vencidas: lineas.append("")
         lineas.append(f"🟡 *Por vencer* — {fmt_monto(total_p)}")
         for f in pendientes:
             lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
-
     return "\n".join(lineas)
 
-RUIDO = {
-    "casio","maxell","hay","tienen","quiero","ver","busco","buscar","necesito",
-    "dame","muestrame","de","del","la","las","los","el","un","una","unos","unas",
-    "que","con","para","por","en","y","o","a","me","stock","precio","disponible",
-    "disponibles","cuantos","cuanto","cual","tienes","tiene","tenemos","modelo",
-    "modelos","producto","productos","mostrar","puedes","puedo","saber","si","no",
+# ── Catálogos ──────────────────────────────────────────────────
+NOMBRES_CATALOGOS = {
+    "relojes casio completo":   "Catalogo_Relojes _Casio _Completo.pdf",
+    "casio completo":           "Catalogo_Relojes _Casio _Completo.pdf",
+    "clasico a-l":              "Catalogo_Relojes_Casio_Clasico_A-L.pdf",
+    "clasico m-w":              "Catalogo_Relojes_Casio_Clasico_M_W.pdf",
+    "despertadores":            "Catalogo_Relojes_Casio_Despertadores.pdf",
+    "edifice":                  "Catalogo_Relojes_Casio_EdificeyDuro.pdf",
+    "gshock":                   "Catalogo_Relojes_Casio_Gshock.pdf",
+    "g-shock":                  "Catalogo_Relojes_Casio_Gshock.pdf",
+    "g shock":                  "Catalogo_Relojes_Casio_Gshock.pdf",
+    "murales":                  "Catalogo_Relojes_Casio_Murales y Crono.pdf",
+    "protreck":                 "Catalogo_Relojes_Casio_Protreck.pdf",
+    "pro trek":                 "Catalogo_Relojes_Casio_Protreck.pdf",
+    "qq alfabeto":              "Catalogo_Relojes_QQ_Alfabeto.pdf",
+    "qq familia":               "Catalogo_Relojes_QQ Familia.pdf",
+    "qq":                       "Catalogo_Relojes_QQ Familia.pdf",
+    "guess":                    "Catalogo Relojes Guess.pdf",
+    "suizos":                   "Catalogo_Relojes_Suizos.pdf",
+    "economicos":               "Catalogo_RelojesEconomicos.pdf",
+    "timesonic":                "Catalogo_Relojes_Timesonic.pdf",
+    "calculadoras casio":       "Catalogo_Calculadoras_Casio.pdf",
+    "calculadoras economicas":  "Catalogo_Calculadoras_Economicas.pdf",
+    "correas cuero":            "Catalogo_Correas de Cuero.pdf",
+    "correas pu":               "Catalogo_Correas PU.pdf",
+    "estuches":                 "Catalogo_Estuches_Joyas.pdf",
+    "limpieza":                 "Catalogo_LimpiezaJoyas.pdf",
+    "pilas reloj":              "Catalogo_Pilas_De_Reloj.pdf",
+    "pilas":                    "Catalogo_Pilas_De_Reloj.pdf",
+    "zippo alfabeto":           "Catalogo_Encendedores_Zippo.pdf",
+    "zippo familia":            "Catalogo_Encendedores_Zippo_Familia.pdf",
+    "zippo":                    "Catalogo_Encendedores_Zippo_Familia.pdf",
+}
+
+MENU_CATALOGOS = """📂 *Catálogos disponibles:*
+
+*Relojes Casio*
+1. Completo
+2. Clásico A-L
+3. Clásico M-W
+4. Despertadores
+5. Edifice & Duro
+6. G-Shock
+7. Murales
+8. Pro Trek
+
+*Relojes otros*
+9. QQ
+10. Guess
+11. Suizos
+12. Económicos
+13. Timesonic
+
+*Otros*
+14. Calculadoras Casio
+15. Calculadoras Económicas
+16. Correas Cuero
+17. Correas PU
+18. Estuches
+19. Limpieza Joyas
+20. Pilas Reloj
+21. Zippo
+
+Escribe el *número* o el *nombre* del catálogo que quieres recibir."""
+
+NUMEROS_CATALOGOS = {
+    "1":  "Catalogo_Relojes _Casio _Completo.pdf",
+    "2":  "Catalogo_Relojes_Casio_Clasico_A-L.pdf",
+    "3":  "Catalogo_Relojes_Casio_Clasico_M_W.pdf",
+    "4":  "Catalogo_Relojes_Casio_Despertadores.pdf",
+    "5":  "Catalogo_Relojes_Casio_EdificeyDuro.pdf",
+    "6":  "Catalogo_Relojes_Casio_Gshock.pdf",
+    "7":  "Catalogo_Relojes_Casio_Murales y Crono.pdf",
+    "8":  "Catalogo_Relojes_Casio_Protreck.pdf",
+    "9":  "Catalogo_Relojes_QQ Familia.pdf",
+    "10": "Catalogo Relojes Guess.pdf",
+    "11": "Catalogo_Relojes_Suizos.pdf",
+    "12": "Catalogo_RelojesEconomicos.pdf",
+    "13": "Catalogo_Relojes_Timesonic.pdf",
+    "14": "Catalogo_Calculadoras_Casio.pdf",
+    "15": "Catalogo_Calculadoras_Economicas.pdf",
+    "16": "Catalogo_Correas de Cuero.pdf",
+    "17": "Catalogo_Correas PU.pdf",
+    "18": "Catalogo_Estuches_Joyas.pdf",
+    "19": "Catalogo_LimpiezaJoyas.pdf",
+    "20": "Catalogo_Pilas_De_Reloj.pdf",
+    "21": "Catalogo_Encendedores_Zippo_Familia.pdf",
 }
 
 def normalizar_texto(texto: str) -> str:
@@ -183,13 +275,19 @@ ALIAS = {
     "protrek": "pro trek",
 }
 
+RUIDO = {
+    "casio","maxell","hay","tienen","quiero","ver","busco","buscar","necesito",
+    "dame","muestrame","de","del","la","las","los","el","un","una","unos","unas",
+    "que","con","para","por","en","y","o","a","me","stock","precio","disponible",
+    "disponibles","cuantos","cuanto","cual","tienes","tiene","tenemos","modelo",
+    "modelos","producto","productos","mostrar","puedes","puedo","saber","si","no",
+}
+
 def limpiar_termino(texto: str) -> str:
     t = normalizar_texto(texto)
-
     for k, v in ALIAS.items():
         if k in t:
             return v
-
     palabras = [p for p in t.split() if len(p) > 1 and p not in RUIDO]
     if not palabras:
         todas = [p for p in t.split() if len(p) > 2]
@@ -212,13 +310,15 @@ BIENVENIDA = (
     "   _ej: F-91, calculadora, pila AA_\n\n"
     "💳 *Tu cuenta* — escribe tu RUT para ver tus facturas\n"
     "   _ej: 12.345.678-9_\n"
-    "   Luego puedes escribir _cuenta_, _deuda_ o _facturas_\n\n"
+    "   Luego escribe _cuenta_, _deuda_ o _facturas_\n\n"
+    "📂 *Catalogos* — escribe _catalogos_ para ver la lista\n\n"
     "En que te puedo ayudar? 🙌"
 )
 
-SALUDOS = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
-AYUDA   = {"ayuda","help","menu","opciones","inicio","start"}
-DEUDA   = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
+SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
+AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
+DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
+CATALOGO = {"catalogo","catalogos","pdf","catalogo"}
 
 
 class StockRequest(BaseModel):
@@ -242,6 +342,7 @@ async def whatsapp_webhook(request: Request):
     body_norm = normalizar_texto(body)
     palabras  = set(body_norm.split())
     sesion    = sesiones.get(numero, {})
+    media_url = None
 
     # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
@@ -250,7 +351,8 @@ async def whatsapp_webhook(request: Request):
                 f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
                 "En que te puedo ayudar?\n"
                 "📦 Escribe un producto para ver stock\n"
-                "💳 Escribe _cuenta_, _deuda_ o _facturas_ para ver tus facturas"
+                "💳 Escribe _cuenta_, _deuda_ o _facturas_\n"
+                "📂 Escribe _catalogos_ para ver la lista"
             )
         else:
             respuesta = BIENVENIDA
@@ -270,7 +372,8 @@ async def whatsapp_webhook(request: Request):
                     f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
                     "Con que quieres continuar?\n"
                     "📦 Escribe un producto para ver stock\n"
-                    "💳 Escribe _cuenta_, _deuda_ o _facturas_ para ver tus facturas"
+                    "💳 Escribe _cuenta_, _deuda_ o _facturas_\n"
+                    "📂 Escribe _catalogos_ para ver la lista"
                 )
             else:
                 respuesta = (
@@ -280,7 +383,7 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo."
 
-    # Deuda / cuenta / facturas
+    # Deuda
     elif palabras & DEUDA:
         if not sesion.get("partner_id"):
             respuesta = (
@@ -295,6 +398,37 @@ async def whatsapp_webhook(request: Request):
             except Exception:
                 respuesta = "⚠️ Error al consultar tus facturas. Intenta de nuevo."
 
+    # Catálogos — mostrar menú
+    elif palabras & CATALOGO and len(body.split()) <= 2:
+        sesiones[numero] = {**sesion, "esperando_catalogo": True}
+        respuesta = MENU_CATALOGOS
+
+    # Selección de catálogo (número o nombre)
+    elif sesion.get("esperando_catalogo"):
+        catalogos = await cargar_catalogos()
+        archivo = None
+
+        # Por número
+        if body_norm.strip() in NUMEROS_CATALOGOS:
+            archivo = NUMEROS_CATALOGOS[body_norm.strip()]
+
+        # Por nombre
+        if not archivo:
+            for key, val in NOMBRES_CATALOGOS.items():
+                if key in body_norm:
+                    archivo = val
+                    break
+
+        if archivo and archivo in catalogos:
+            url = catalogos[archivo]
+            sesiones[numero] = {**sesion, "esperando_catalogo": False}
+            respuesta = f"📎 Aqui va tu catalogo:"
+            media_url = url
+        elif archivo:
+            respuesta = "⚠️ Ese catalogo no esta disponible en este momento. Intenta mas tarde."
+        else:
+            respuesta = "No entendi cual catalogo quieres. Escribe el *numero* o el *nombre* de la lista.\n\nEscribe _catalogos_ para ver la lista de nuevo."
+
     # Búsqueda de producto
     else:
         try:
@@ -304,10 +438,20 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    if media_url:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Message>
+        <Body>{respuesta}</Body>
+        <Media>{media_url}</Media>
+    </Message>
+</Response>"""
+    else:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>{respuesta}</Message>
 </Response>"""
+
     return PlainTextResponse(content=twiml, media_type="application/xml")
 
 
