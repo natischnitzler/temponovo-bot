@@ -452,6 +452,7 @@ async def whatsapp_webhook(request: Request):
     <Message>{respuesta}</Message>
 </Response>"""
 
+    print(f"TWIML: {twiml[:200]}")
     return PlainTextResponse(content=twiml, media_type="application/xml")
 
 
