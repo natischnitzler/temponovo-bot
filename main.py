@@ -1,6 +1,7 @@
 import os
 import xmlrpc.client
 import re
+from datetime import date
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -54,6 +55,62 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
         if vat_digits == digitos:
             return {"encontrado": True, "id": p["id"], "nombre": p["name"]}
     return {"encontrado": False}
+
+def consultar_deuda(partner_id: int) -> dict:
+    uid, models = odoo_connect()
+    facturas = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASS,
+        "account.move", "search_read",
+        [[
+            ["partner_id", "=", partner_id],
+            ["move_type", "=", "out_invoice"],
+            ["payment_state", "in", ["not_paid", "partial"]],
+            ["state", "=", "posted"]
+        ]],
+        {"fields": ["name", "invoice_date_due", "amount_residual"], "limit": 20}
+    )
+    hoy = date.today().isoformat()
+    vencidas = []
+    pendientes = []
+    for f in facturas:
+        venc = f.get("invoice_date_due") or ""
+        monto = round(f["amount_residual"])
+        item = {"factura": f["name"], "monto": monto, "vencimiento": venc}
+        if venc and venc < hoy:
+            vencidas.append(item)
+        else:
+            pendientes.append(item)
+    return {"vencidas": vencidas, "pendientes": pendientes}
+
+def formatear_deuda(deuda: dict, nombre: str) -> str:
+    vencidas  = deuda["vencidas"]
+    pendientes = deuda["pendientes"]
+
+    if not vencidas and not pendientes:
+        return f"*{nombre}* no tiene facturas pendientes. Todo al dia!"
+
+    def fmt_monto(n):
+        return "$" + f"{n:,}".replace(",", ".")
+
+    lineas = []
+
+    if vencidas:
+        total_v = sum(f["monto"] for f in vencidas)
+        lineas.append(f"*Vencidas* ({len(vencidas)}) — Total: {fmt_monto(total_v)}")
+        for f in vencidas:
+            lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | vencio {f['vencimiento']}")
+
+    if pendientes:
+        total_p = sum(f["monto"] for f in pendientes)
+        if lineas:
+            lineas.append("")
+        lineas.append(f"*Por vencer* ({len(pendientes)}) — Total: {fmt_monto(total_p)}")
+        for f in pendientes:
+            lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | vence {f['vencimiento']}")
+
+    total = sum(f["monto"] for f in vencidas + pendientes)
+    lineas.append(f"\n*Total adeudado: {fmt_monto(total)}*")
+    return "\n".join(lineas)
 
 def buscar_productos(termino: str) -> list:
     uid, models = odoo_connect()
@@ -122,13 +179,6 @@ def formatear_wa(productos: list, termino: str) -> str:
         lineas.append(f"\n_{len(productos)-10} productos mas. Refina tu busqueda para ver menos._")
     return "\n".join(lineas)
 
-def menu_autenticado(nombre: str) -> str:
-    return (
-        f"Con que quieres continuar, *{nombre}*?\n\n"
-        "- Escribe un producto para ver stock\n"
-        "- Escribe *mi deuda* para ver tus facturas pendientes"
-    )
-
 BIENVENIDA = (
     "Hola! Bienvenido a *Temponovo*.\n\n"
     "- Para consultar *stock* escribe el producto que buscas\n"
@@ -139,7 +189,7 @@ BIENVENIDA = (
 
 SALUDOS = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA   = {"ayuda","help","menu","opciones","inicio","start"}
-DEUDA   = {"deuda","factura","facturas","debo","cobro","cuenta","saldo","pendiente","pendientes"}
+DEUDA   = {"deuda","factura","facturas","debo","cobro","cuenta","saldo","pendiente","pendientes","cuanto debo","mi deuda"}
 
 
 class StockRequest(BaseModel):
@@ -169,12 +219,13 @@ async def whatsapp_webhook(request: Request):
         if sesion.get("nombre"):
             respuesta = (
                 f"Hola de nuevo, *{sesion['nombre']}*!\n\n"
-                + menu_autenticado(sesion["nombre"]).split("\n\n", 1)[1]
+                "- Escribe un producto para ver stock\n"
+                "- Escribe *mi deuda* para ver tus facturas"
             )
         else:
             respuesta = BIENVENIDA
 
-    # Ayuda / menú
+    # Ayuda
     elif palabras & AYUDA:
         respuesta = BIENVENIDA
 
@@ -187,7 +238,9 @@ async def whatsapp_webhook(request: Request):
                 sesiones[numero] = {"partner_id": cliente["id"], "nombre": cliente["nombre"]}
                 respuesta = (
                     f"Hola, *{cliente['nombre']}*!\n\n"
-                    + menu_autenticado(cliente["nombre"]).split("\n\n", 1)[1]
+                    "Con que quieres continuar?\n"
+                    "- Escribe un producto para ver stock\n"
+                    "- Escribe *mi deuda* para ver tus facturas pendientes"
                 )
             else:
                 respuesta = (
@@ -197,12 +250,16 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "Error al consultar el sistema. Intenta de nuevo."
 
-    # Deuda (requiere autenticación)
+    # Deuda
     elif palabras & DEUDA:
         if not sesion.get("partner_id"):
             respuesta = "Para ver tu deuda primero necesito identificarte.\nEscribe tu *RUT* y te busco en el sistema."
         else:
-            respuesta = "Funcion de deuda proximamente disponible."
+            try:
+                deuda = consultar_deuda(sesion["partner_id"])
+                respuesta = formatear_deuda(deuda, sesion["nombre"])
+            except Exception:
+                respuesta = "Error al consultar tus facturas. Intenta de nuevo."
 
     # Búsqueda de producto
     else:
