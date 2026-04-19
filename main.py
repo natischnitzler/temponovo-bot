@@ -179,9 +179,7 @@ async def cargar_catalogos():
         print(f"Error cargando catalogos: {e}")
         return {}
 
-NUM_EMOJIS = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟",
-              "1️⃣1️⃣","1️⃣2️⃣","1️⃣3️⃣","1️⃣4️⃣","1️⃣5️⃣","1️⃣6️⃣","1️⃣7️⃣","1️⃣8️⃣","1️⃣9️⃣","2️⃣0️⃣",
-              "2️⃣1️⃣","2️⃣2️⃣","2️⃣3️⃣"]
+NUM_EMOJIS = [f"{i}." for i in range(1, 30)]
 
 NOMBRES_LEGIBLES = {
     "Catalogo_Relojes_Casio_Clasico_A-L.pdf":    "Relojes Casio Clásico A-L",
