@@ -32,11 +32,13 @@ async def cargar_catalogos():
     if _catalogos_cache:
         return _catalogos_cache
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            r = await client.get(CATALOGOS_JSON_URL)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            r = await client.get(CATALOGOS_JSON_URL, headers={"Accept": "application/octet-stream"})
             _catalogos_cache = r.json()
+            print(f"Catalogos cargados: {len(_catalogos_cache)}")
             return _catalogos_cache
-    except:
+    except Exception as e:
+        print(f"Error cargando catalogos: {e}")
         return {}
 
 
