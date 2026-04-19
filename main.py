@@ -208,17 +208,16 @@ NOMBRES_LEGIBLES = {
 
 NUMEROS_CATALOGOS = {}
 
-def generar_menu(catalogos: dict) -> str:
-    global NUMEROS_CATALOGOS
-    NUMEROS_CATALOGOS = {}
+def generar_menu(catalogos: dict) -> tuple[str, dict]:
+    numeros = {}
     lineas = ["📂 *Catálogos disponibles:*\n"]
     for i, archivo in enumerate(catalogos.keys()):
         emoji = NUM_EMOJIS[i] if i < len(NUM_EMOJIS) else f"{i+1}."
         nombre = NOMBRES_LEGIBLES.get(archivo, archivo.replace("_", " ").replace(".pdf", ""))
         lineas.append(f"{emoji} {nombre}")
-        NUMEROS_CATALOGOS[str(i + 1)] = archivo
+        numeros[str(i + 1)] = archivo
     lineas.append("\nEscribe el *número* del catálogo que quieres recibir.")
-    return "\n".join(lineas)
+    return "\n".join(lineas), numeros
 
 NOMBRES_CATALOGOS_ALIAS = {
     "clasico a-l": "Catalogo_Relojes_Casio_Clasico_A-L.pdf",
@@ -340,17 +339,19 @@ async def whatsapp_webhook(request: Request):
         if not catalogos:
             respuesta = "⚠️ No se pudieron cargar los catalogos. Intenta de nuevo."
         else:
-            sesiones[numero] = {**sesion, "esperando_catalogo": True}
-            respuesta = generar_menu(catalogos)
+            menu_txt, numeros = generar_menu(catalogos)
+            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
+            respuesta = menu_txt
 
     # Selección de catálogo
     elif sesion.get("esperando_catalogo"):
         catalogos = await cargar_catalogos()
         archivo = None
         num = body_norm.strip()
+        menu_numeros = sesion.get("menu_numeros", {})
 
-        if num in NUMEROS_CATALOGOS:
-            archivo = NUMEROS_CATALOGOS[num]
+        if num in menu_numeros:
+            archivo = menu_numeros[num]
         else:
             for key, val in NOMBRES_CATALOGOS_ALIAS.items():
                 if key in body_norm:
