@@ -1,7 +1,7 @@
 import os
 import xmlrpc.client
 import re
-from datetime import date
+from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -98,25 +98,67 @@ def consultar_deuda(partner_id: int) -> dict:
 def fmt_monto(n):
     return "$" + f"{n:,}".replace(",", ".")
 
+def fmt_fecha(fecha_iso: str) -> str:
+    if not fecha_iso:
+        return "—"
+    try:
+        d = datetime.strptime(fecha_iso, "%Y-%m-%d")
+        return d.strftime("%d/%m/%Y")
+    except:
+        return fecha_iso
+
+def stock_emoji(s: int) -> str:
+    if s == 0:   return "⚫"
+    if s < 10:   return "🔴"
+    if s <= 20:  return "🟡"
+    return "🟢"
+
+def stock_txt(s: int) -> str:
+    if s == 0:   return "Sin stock"
+    if s > 100:  return "100+"
+    return str(s)
+
+def formatear_wa(productos: list, termino: str) -> str:
+    if not productos:
+        return (
+            f"😕 No encontre productos para *{termino}*.\n\n"
+            "Intenta con otro termino:\n"
+            "• _F-91_, _W-800_, _AE-1200_\n"
+            "• _calculadora_, _MR-27_\n"
+            "• _AA_, _AAA_, _CR2032_"
+        )
+    lineas = [f"📦 *{len(productos)} resultado{'s' if len(productos) > 1 else ''}* para _{termino}_:\n"]
+    for p in productos[:10]:
+        emoji = stock_emoji(p["stock"])
+        stxt  = stock_txt(p["stock"])
+        precio = fmt_monto(int(p["precio"]))
+        lineas.append(f"{emoji} {p['codigo']} | {precio} | {stxt}")
+    if len(productos) > 10:
+        lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu busqueda._")
+    return "\n".join(lineas)
+
 def formatear_deuda(deuda: dict, nombre: str) -> str:
-    vencidas  = deuda["vencidas"]
+    vencidas   = deuda["vencidas"]
     pendientes = deuda["pendientes"]
     if not vencidas and not pendientes:
         return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
-    lineas = []
+
+    total = sum(f["monto"] for f in vencidas + pendientes)
+    lineas = [f"💰 *Total adeudado: {fmt_monto(total)}*\n"]
+
     if vencidas:
         total_v = sum(f["monto"] for f in vencidas)
-        lineas.append(f"🔴 *Vencidas* ({len(vencidas)}) — Total: {fmt_monto(total_v)}")
+        lineas.append(f"🔴 *Vencidas* — {fmt_monto(total_v)}")
         for f in vencidas:
-            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | vencio {f['vencimiento']}")
+            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+
     if pendientes:
         total_p = sum(f["monto"] for f in pendientes)
-        if lineas: lineas.append("")
-        lineas.append(f"🟡 *Por vencer* ({len(pendientes)}) — Total: {fmt_monto(total_p)}")
+        if vencidas: lineas.append("")
+        lineas.append(f"🟡 *Por vencer* — {fmt_monto(total_p)}")
         for f in pendientes:
-            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | vence {f['vencimiento']}")
-    total = sum(f["monto"] for f in vencidas + pendientes)
-    lineas.append(f"\n💰 *Total adeudado: {fmt_monto(total)}*")
+            lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+
     return "\n".join(lineas)
 
 RUIDO = {
@@ -149,39 +191,21 @@ def limpiar_termino(texto: str) -> str:
         palabra = palabra[:-1]
     return palabra
 
-def formatear_wa(productos: list, termino: str) -> str:
-    if not productos:
-        return (
-            f"😕 No encontre productos para *{termino}*.\n\n"
-            "Intenta con otro termino, por ejemplo:\n"
-            "• _F-91_, _W-800_, _AE-1200_ (relojes)\n"
-            "• _calculadora_, _MR-27_ (calculadoras)\n"
-            "• _AA_, _AAA_, _CR2032_ (pilas)"
-        )
-    lineas = [f"📦 Encontre *{len(productos)} producto{'s' if len(productos) > 1 else ''}* para _{termino}_:\n"]
-    for p in productos[:10]:
-        stock_txt = f"{p['stock']} en stock" if p["stock"] > 0 else "Sin stock"
-        emoji = "✅" if p["stock"] > 0 else "❌"
-        precio = fmt_monto(int(p["precio"]))
-        lineas.append(f"{emoji} *{p['nombre']}*\n   Cod: {p['codigo']} | {precio} | {stock_txt}")
-    if len(productos) > 10:
-        lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu busqueda para ver menos._")
-    return "\n".join(lineas)
-
 BIENVENIDA = (
     "👋 Hola! Bienvenido a *Temponovo*!\n\n"
-    "Soy Temo, tu asistente 😊 Estoy aqui para ayudarte con lo que necesites.\n\n"
+    "Soy Temo, tu asistente 😊\n\n"
     "Puedes preguntarme por:\n"
-    "📦 *Stock y precios* — escribe el producto que buscas\n"
-    "   _ej: calculadoras, pilas AA, reloj F-91_\n\n"
-    "💳 *Tu deuda* — escribe tu RUT para ver tus facturas\n"
-    "   _ej: 12.345.678-9_\n\n"
+    "📦 *Stock y precios* — escribe el producto o codigo\n"
+    "   _ej: F-91, calculadora, pila AA_\n\n"
+    "💳 *Tu cuenta* — escribe tu RUT para ver tus facturas\n"
+    "   _ej: 12.345.678-9_\n"
+    "   Luego puedes escribir _cuenta_, _deuda_ o _facturas_\n\n"
     "En que te puedo ayudar? 🙌"
 )
 
 SALUDOS = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA   = {"ayuda","help","menu","opciones","inicio","start"}
-DEUDA   = {"deuda","factura","facturas","debo","cobro","cuenta","saldo","pendiente","pendientes"}
+DEUDA   = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
 
 
 class StockRequest(BaseModel):
@@ -203,23 +227,26 @@ async def whatsapp_webhook(request: Request):
     numero = form.get("From", "").strip()
 
     body_norm = normalizar_texto(body)
-    palabras = set(body_norm.split())
-    sesion = sesiones.get(numero, {})
+    palabras  = set(body_norm.split())
+    sesion    = sesiones.get(numero, {})
 
+    # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
         if sesion.get("nombre"):
             respuesta = (
-                f"👋 Hola de nuevo, *{sesion['nombre']}*! Que bueno verte por aca 😊\n\n"
-                "En que te puedo ayudar hoy?\n"
+                f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
+                "En que te puedo ayudar?\n"
                 "📦 Escribe un producto para ver stock\n"
-                "💳 Escribe *mi deuda* para ver tus facturas"
+                "💳 Escribe _cuenta_, _deuda_ o _facturas_ para ver tus facturas"
             )
         else:
             respuesta = BIENVENIDA
 
+    # Ayuda
     elif palabras & AYUDA:
         respuesta = BIENVENIDA
 
+    # RUT
     elif es_rut(body):
         rut_norm = normalizar_rut(body)
         try:
@@ -230,20 +257,21 @@ async def whatsapp_webhook(request: Request):
                     f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
                     "Con que quieres continuar?\n"
                     "📦 Escribe un producto para ver stock\n"
-                    "💳 Escribe *mi deuda* para ver tus facturas pendientes"
+                    "💳 Escribe _cuenta_, _deuda_ o _facturas_ para ver tus facturas"
                 )
             else:
                 respuesta = (
                     f"❌ No encontre un cliente con el RUT *{rut_norm}*.\n\n"
-                    "Verifica el numero o contacta a tu vendedor directamente."
+                    "Verifica el numero o contacta a tu vendedor."
                 )
         except Exception:
-            respuesta = "⚠️ Hubo un error consultando el sistema. Intenta de nuevo en un momento."
+            respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo."
 
+    # Deuda / cuenta / facturas
     elif palabras & DEUDA:
         if not sesion.get("partner_id"):
             respuesta = (
-                "🔐 Para ver tu deuda primero necesito identificarte.\n\n"
+                "🔐 Para ver tu cuenta primero necesito identificarte.\n\n"
                 "Escribe tu *RUT* y te busco en el sistema.\n"
                 "_ej: 12.345.678-9_"
             )
@@ -254,13 +282,14 @@ async def whatsapp_webhook(request: Request):
             except Exception:
                 respuesta = "⚠️ Error al consultar tus facturas. Intenta de nuevo."
 
+    # Búsqueda de producto
     else:
         try:
             termino = limpiar_termino(body)
             productos = buscar_productos(termino)
             respuesta = formatear_wa(productos, termino)
         except Exception:
-            respuesta = "⚠️ Hubo un error consultando el sistema. Intenta de nuevo en un momento."
+            respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
