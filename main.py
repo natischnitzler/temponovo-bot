@@ -306,31 +306,18 @@ NOMBRES_LEGIBLES = {
     "Catalogo_Encendedores_Zippo_Familia.pdf":   "Encendedores Zippo (familia)",
 }
 
-def generar_menu(catalogos: dict) -> tuple[str, dict]:
+def generar_menu(catalogos: dict) -> str:
     global NUMEROS_CATALOGOS
     NUMEROS_CATALOGOS = {}
-    lineas = ["📂 *Catálogos disponibles:*
-"]
+    lineas = ["📂 *Catálogos disponibles:*\n"]
     for i, archivo in enumerate(catalogos.keys()):
         emoji = NUM_EMOJIS[i] if i < len(NUM_EMOJIS) else f"{i+1}."
         nombre = NOMBRES_LEGIBLES.get(archivo, archivo.replace("_"," ").replace(".pdf",""))
         lineas.append(f"{emoji} {nombre}")
         NUMEROS_CATALOGOS[str(i+1)] = archivo
-    lineas.append("
-Escribe el *número* del catálogo que quieres recibir.")
+    lineas.append("\nEscribe el *número* del catálogo que quieres recibir.")
     return "\n".join(lineas)
 
-SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
-AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
-DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
-CATALOGO = {"catalogo","catalogos","pdf"}
-
-
-class StockRequest(BaseModel):
-    producto: str
-
-
-@app.post("/stock")
 def consultar_stock(req: StockRequest):
     try:
         return {"productos": buscar_productos(req.producto)}
