@@ -11,6 +11,11 @@ from pydantic import BaseModel
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+@app.on_event("startup")
+async def startup():
+    await cargar_catalogos()
+    print("Bot listo")
+
 ODOO_URL  = os.environ.get("ODOO_URL",  "https://temponovo.odoo.com")
 ODOO_DB   = os.environ.get("ODOO_DB",   "cmcorpcl-temponovo-main-24490235")
 ODOO_USER = os.environ.get("ODOO_USER", "")
@@ -379,6 +384,7 @@ async def whatsapp_webhook(request: Request):
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+    print(f"RESP: {respuesta[:80]}")
     if media_url:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
