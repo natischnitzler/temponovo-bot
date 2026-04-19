@@ -377,18 +377,19 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
+    def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
     if media_url:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>
-        <Body>{respuesta}</Body>
+        <Body>{xe(respuesta)}</Body>
         <Media>{media_url}</Media>
     </Message>
 </Response>"""
     else:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Message>{respuesta}</Message>
+    <Message>{xe(respuesta)}</Message>
 </Response>"""
 
     return PlainTextResponse(content=twiml, media_type="application/xml")
