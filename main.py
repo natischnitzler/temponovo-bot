@@ -22,7 +22,7 @@ ODOO_DB   = os.environ.get("ODOO_DB",   "cmcorpcl-temponovo-main-24490235")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_PASS = os.environ.get("ODOO_PASS", "")
 
-CATALOGOS_JSON_URL = "https://github.com/natischnitzler/temponovo_catalogos/releases/download/catalogos-latest/catalogos_links.json"
+CATALOGOS_JSON_URL = "https://api.github.com/repos/natischnitzler/temponovo_catalogos/releases/tags/catalogos-latest"
 
 sesiones = {}
 _catalogos_cache = None
@@ -33,8 +33,17 @@ async def cargar_catalogos():
         return _catalogos_cache
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            r = await client.get(CATALOGOS_JSON_URL, headers={"Accept": "application/octet-stream"})
-            _catalogos_cache = r.json()
+            # Obtener info del release via API
+            r = await client.get(CATALOGOS_JSON_URL, headers={"Accept": "application/vnd.github+json"})
+            release = r.json()
+            # Buscar el asset catalogos_links.json
+            asset = next((a for a in release.get("assets", []) if a["name"] == "catalogos_links.json"), None)
+            if not asset:
+                print("Asset catalogos_links.json no encontrado")
+                return {}
+            # Descargar el asset
+            r2 = await client.get(asset["browser_download_url"], headers={"Accept": "application/octet-stream"})
+            _catalogos_cache = r2.json()
             print(f"Catalogos cargados: {len(_catalogos_cache)}")
             return _catalogos_cache
     except Exception as e:
