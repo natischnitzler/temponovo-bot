@@ -1,5 +1,6 @@
 import os
 import xmlrpc.client
+import traceback
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -33,11 +34,12 @@ def consultar_stock(req: StockRequest):
     try:
         uid = odoo_uid()
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+        t = req.producto.strip()
         resultados = models.execute_kw(
             ODOO_DB, uid, ODOO_PASS,
             "product.template", "search_read",
-            [[["name", "ilike", req.producto], ["sale_ok", "=", True], ["active", "=", True]]],
-            {"fields": ["name", "default_code", "list_price", "qty_available"], "limit": 10}
+            [[["active", "=", True], "|", ["name", "ilike", t], ["default_code", "ilike", t]]],
+            {"fields": ["name", "default_code", "list_price", "qty_available"], "limit": 50}
         )
         return {
             "productos": [
@@ -51,9 +53,10 @@ def consultar_stock(req: StockRequest):
             ]
         }
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "odoo_url": ODOO_URL, "odoo_db": ODOO_DB, "odoo_user": ODOO_USER}
