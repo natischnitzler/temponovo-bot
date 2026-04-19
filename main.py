@@ -64,7 +64,7 @@ def buscar_productos(termino: str) -> list:
         [[["active", "=", True], "|", ["name", "ilike", t], ["default_code", "ilike", t]]],
         {"fields": ["name", "default_code", "list_price", "qty_available"], "limit": 20}
     )
-    return [
+    productos = [
         {
             "nombre": p["name"],
             "codigo": p.get("default_code") or "—",
@@ -73,6 +73,7 @@ def buscar_productos(termino: str) -> list:
         }
         for p in resultados
     ]
+    return sorted(productos, key=lambda x: x["stock"], reverse=True)
 
 def consultar_deuda(partner_id: int) -> dict:
     uid, models = odoo_connect()
@@ -175,8 +176,20 @@ def normalizar_texto(texto: str) -> str:
         t = t.replace(a, b)
     return re.sub(r"[^a-z0-9\s\-]", " ", t)
 
+ALIAS = {
+    "gshock": "g-shock",
+    "g shock": "g-shock",
+    "protreck": "pro trek",
+    "protrek": "pro trek",
+}
+
 def limpiar_termino(texto: str) -> str:
     t = normalizar_texto(texto)
+
+    for k, v in ALIAS.items():
+        if k in t:
+            return v
+
     palabras = [p for p in t.split() if len(p) > 1 and p not in RUIDO]
     if not palabras:
         todas = [p for p in t.split() if len(p) > 2]
