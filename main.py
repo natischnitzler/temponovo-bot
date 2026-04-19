@@ -262,7 +262,7 @@ BIENVENIDA = (
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
 DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
-CATALOGO = {"catalogo","catalogos","pdf"}
+CATALOGO = {"catalogo","catalogos","pdf","catalogue"}
 
 
 # ── Endpoints ─────────────────────────────────────────────────
@@ -361,7 +361,7 @@ async def whatsapp_webhook(request: Request):
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
             sesiones[numero] = {**sesion, "esperando_catalogo": False}
-            respuesta = "📎 Aqui va tu catalogo:"
+            respuesta = "📎 Aqui va tu catalogo"
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catalogo no esta disponible en este momento."
