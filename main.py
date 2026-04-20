@@ -352,6 +352,15 @@ async def whatsapp_webhook(request: Request):
         catalogos = await cargar_catalogos()
         archivo = None
         num = body_norm.strip()
+
+        # Volver al menú
+        if num in {"menu", "lista", "volver", "catalogos", "catalogo"}:
+            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": sesion.get("menu_numeros", {})}
+            menu_txt, numeros = generar_menu(catalogos)
+            sesiones[numero]["menu_numeros"] = numeros
+            respuesta = menu_txt
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+            return PlainTextResponse(content=twiml, media_type="application/xml")
         menu_numeros = sesion.get("menu_numeros", {})
 
         if num in menu_numeros:
@@ -364,14 +373,14 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            sesiones[numero] = {**sesion, "esperando_catalogo": False}
-            respuesta = "📎 Aqui va tu catalogo"
+            # Mantener esperando_catalogo para que pueda pedir otro sin escribir "catalogo"
+            respuesta = "📎 Aqui va tu catalogo\n\nEscribe otro número para ver más, o _menu_ para volver a la lista."
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catalogo no esta disponible en este momento."
         else:
             respuesta = ("No entendi cual catalogo quieres.\n\n"
-                         "Escribe el *número* de la lista o escribe _catalogos_ para verla de nuevo.")
+                         "Escribe el *número* de la lista o _menu_ para verla de nuevo.")
 
     # Búsqueda de producto
     else:
