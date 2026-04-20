@@ -255,12 +255,11 @@ BIENVENIDA = (
     "👋 Hola! Bienvenido a *Temponovo*!\n\n"
     "Soy Temo, tu asistente 😊\n\n"
     "Puedes preguntarme por:\n"
-    "📦 *Stock y precios* — escribe el producto o codigo\n"
+    "📦 *Stock* — escribe el producto o codigo\n"
     "   _ej: F-91, calculadora, pila AA_\n\n"
-    "💳 *Tu cuenta* — escribe tu RUT para ver tus facturas\n"
-    "   _ej: 12.345.678-9_\n"
-    "   Luego escribe _cuenta_, _deuda_ o _facturas_\n\n"
-    "📂 *Catalogos* — escribe _catalogos_ para ver la lista\n\n"
+    "💳 *Tu cuenta* — escribe tu RUT y luego _cuenta_\n"
+    "   _ej: 12.345.678-9_\n\n"
+    "📂 *Catalogos* — escribe _catalogo_ para ver la lista\n\n"
     "En que te puedo ayudar? 🙌"
 )
 
@@ -298,9 +297,9 @@ async def whatsapp_webhook(request: Request):
         if sesion.get("nombre"):
             respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
                          "En que te puedo ayudar?\n"
-                         "📦 Escribe un producto para ver stock\n"
-                         "💳 Escribe _cuenta_, _deuda_ o _facturas_\n"
-                         "📂 Escribe _catalogos_ para ver la lista")
+                         "📦 Escribe un producto para ver su stock\n"
+                         "💳 Escribe _cuenta_ para ver tu deuda\n"
+                         "📂 Escribe _catalogo_ para ver lista de catalogos")
         else:
             respuesta = BIENVENIDA
 
@@ -317,9 +316,9 @@ async def whatsapp_webhook(request: Request):
                 sesiones[numero] = {"partner_id": cliente["id"], "nombre": cliente["nombre"]}
                 respuesta = (f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
                              "Con que quieres continuar?\n"
-                             "📦 Escribe un producto para ver stock\n"
-                             "💳 Escribe _cuenta_, _deuda_ o _facturas_\n"
-                             "📂 Escribe _catalogos_ para ver la lista")
+                             "📦 Escribe un producto para ver su stock\n"
+                             "💳 Escribe _cuenta_ para ver tu deuda\n"
+                             "📂 Escribe _catalogo_ para ver lista de catalogos")
             else:
                 respuesta = (f"❌ No encontre un cliente con el RUT *{rut_norm}*.\n\n"
                              "Verifica el numero o contacta a tu vendedor.")
