@@ -396,7 +396,8 @@ async def whatsapp_webhook(request: Request):
                     c = clientes[0]
                     sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
                     deuda = consultar_deuda(c["id"])
-                    respuesta = formatear_deuda(deuda, c["nombre"])
+                    deuda_txt = formatear_deuda(deuda, c["nombre"])
+                    respuesta = f"✅ *{c['nombre']}*\n\n{deuda_txt}"
                 elif len(clientes) > 1:
                     lista = "\n".join([f"• {c['nombre']} ({c['rut']})" for c in clientes])
                     respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
