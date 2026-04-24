@@ -81,6 +81,16 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
             return {"encontrado": True, "id": p["id"], "nombre": p["name"]}
     return {"encontrado": False}
 
+def buscar_cliente_por_nombre(nombre: str) -> list:
+    uid, models = odoo_connect()
+    partners = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASS,
+        "res.partner", "search_read",
+        [[["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]],
+        {"fields": ["id", "name", "vat"], "limit": 5}
+    )
+    return [{"id": p["id"], "nombre": p["name"], "rut": p.get("vat","")} for p in partners]
+
 
 # ── Helpers ───────────────────────────────────────────────────
 def normalizar_rut(rut: str) -> str:
@@ -328,8 +338,30 @@ async def whatsapp_webhook(request: Request):
     # Deuda
     elif palabras & DEUDA:
         if not sesion.get("partner_id"):
-            respuesta = ("🔐 Para ver tu cuenta primero necesito identificarte.\n\n"
-                         "Escribe tu *RUT* y te busco en el sistema.\n_ej: 12.345.678-9_")
+            # Intentar buscar cliente por nombre si viene en el mismo mensaje
+            # ej: "cuenta de AD Joyas" o "deuda relojería central"
+            texto_sin_deuda = body_norm
+            for palabra in DEUDA:
+                texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
+            texto_sin_deuda = texto_sin_deuda.strip()
+
+            if len(texto_sin_deuda) > 3:
+                try:
+                    clientes = buscar_cliente_por_nombre(texto_sin_deuda)
+                    if len(clientes) == 1:
+                        c = clientes[0]
+                        sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
+                        deuda = consultar_deuda(c["id"])
+                        respuesta = formatear_deuda(deuda, c["nombre"])
+                    elif len(clientes) > 1:
+                        lista = "\n".join([f"• {c['nombre']} ({c['rut']})" for c in clientes])
+                        respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
+                    else:
+                        respuesta = f"No encontre cliente con ese nombre. Escribe el *RUT* del cliente."
+                except Exception:
+                    respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo."
+            else:
+                respuesta = ("🔐 Escribe el *RUT* del cliente o *cuenta de [nombre]*\n_ej: cuenta de AD Joyas_")
         else:
             try:
                 deuda = consultar_deuda(sesion["partner_id"])
@@ -354,7 +386,7 @@ async def whatsapp_webhook(request: Request):
         num = body_norm.strip()
 
         # Volver al menú
-        if num in {"menu", "lista", "volver", "catalogos", "catalogo"}:
+        if body_norm.strip() in {"menu", "lista", "volver", "catalogos", "catalogo"}:
             sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": sesion.get("menu_numeros", {})}
             menu_txt, numeros = generar_menu(catalogos)
             sesiones[numero]["menu_numeros"] = numeros
@@ -379,8 +411,14 @@ async def whatsapp_webhook(request: Request):
         elif archivo:
             respuesta = "⚠️ Ese catalogo no esta disponible en este momento."
         else:
-            respuesta = ("No entendi cual catalogo quieres.\n\n"
-                         "Escribe el *número* de la lista o _menu_ para verla de nuevo.")
+            # No es número ni menu — salir del modo catálogo y buscar como producto
+            sesiones[numero] = {**sesion, "esperando_catalogo": False}
+            try:
+                termino = limpiar_termino(body)
+                productos = buscar_productos(termino)
+                respuesta = formatear_wa(productos, termino)
+            except Exception:
+                respuesta = "⚠️ Hubo un error. Intenta de nuevo."
 
     # Búsqueda de producto
     else:
