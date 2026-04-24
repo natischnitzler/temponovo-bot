@@ -113,6 +113,16 @@ async def startup():
     await cargar_catalogos()
     await cargar_usuarios()
     print("Bot listo")
+    # Iniciar recarga periódica de usuarios
+    import asyncio
+    async def recargar_periodico():
+        while True:
+            await asyncio.sleep(1800)  # 30 minutos
+            global _usuarios
+            _usuarios = {}
+            await cargar_usuarios()
+            print("Usuarios recargados")
+    asyncio.create_task(recargar_periodico())
 
 
 # ── Odoo ──────────────────────────────────────────────────────
@@ -170,12 +180,27 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
             return {"encontrado": True, "id": p["id"], "nombre": p["name"]}
     return {"encontrado": False}
 
-def buscar_cliente_por_nombre(nombre: str) -> list:
+def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
     uid, models = odoo_connect()
+    dominio = [["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]
+    
+    # Si es vendedor, filtrar solo sus clientes
+    if vendedor_nombre:
+        # Buscar el user_id del vendedor
+        usuarios = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASS,
+            "res.users", "search_read",
+            [[["name", "ilike", vendedor_nombre]]],
+            {"fields": ["id", "name"], "limit": 3}
+        )
+        if usuarios:
+            user_ids = [u["id"] for u in usuarios]
+            dominio.append(["user_id", "in", user_ids])
+    
     partners = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         "res.partner", "search_read",
-        [[["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]],
+        [dominio],
         {"fields": ["id", "name", "vat"], "limit": 5}
     )
     return [{"id": p["id"], "nombre": p["name"], "rut": p.get("vat","")} for p in partners]
@@ -459,7 +484,8 @@ async def whatsapp_webhook(request: Request):
 
         if len(texto_sin_deuda) > 3 and (es_admin or not sesion.get("partner_id")):
             try:
-                clientes = buscar_cliente_por_nombre(texto_sin_deuda)
+                vendedor_filtro = usuario["nombre"] if usuario["tipo"] == "vendedor" else ""
+                clientes = buscar_cliente_por_nombre(texto_sin_deuda, vendedor_filtro)
                 if len(clientes) == 1:
                     c = clientes[0]
                     sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
