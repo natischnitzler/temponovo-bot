@@ -366,9 +366,9 @@ async def whatsapp_webhook(request: Request):
             if cliente["encontrado"]:
                 sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
                 if es_admin:
-                    respuesta = (f"✅ *{cliente['nombre']}* encontrado.\n\n"
-                                 "📦 Escribe un producto para ver stock\n"
-                                 "💳 Escribe _cuenta_ para ver su deuda")
+                    # Admin ve la deuda directo
+                    deuda = consultar_deuda(cliente["id"])
+                    respuesta = formatear_deuda(deuda, cliente["nombre"])
                 else:
                     respuesta = (f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
                                  "Con que quieres continuar?\n"
