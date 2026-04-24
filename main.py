@@ -571,3 +571,14 @@ async def whatsapp_webhook(request: Request):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/reload")
+async def reload():
+    global _usuarios
+    _usuarios = {}
+    await cargar_usuarios()
+    return {"usuarios": len(_usuarios), "numeros": list(_usuarios.keys())}
+
+@app.get("/usuarios")
+def ver_usuarios():
+    return {k: v for k, v in _usuarios.items()}
