@@ -359,14 +359,9 @@ def bienvenida_admin(nombre: str) -> str:
 
 BIENVENIDA_PUBLICA = (
     "👋 Hola! Bienvenido a *Temponovo*!\n\n"
-    "Soy Temo, tu asistente 😊\n\n"
-    "Puedes preguntarme por:\n"
-    "📦 *Stock* — escribe el producto o codigo\n"
-    "   _ej: F-91, calculadora, pila AA_\n\n"
-    "💳 *Tu cuenta* — escribe tu RUT y luego _cuenta_\n"
-    "   _ej: 12.345.678-9_\n\n"
-    "📂 *Catalogos* — escribe _catalogo_ para ver la lista\n\n"
-    "En que te puedo ayudar? 🙌"
+    "Para acceder al asistente necesitas estar registrado.\n\n"
+    "Contacta a Natalia para que te den acceso:\n"
+    "📱 +56 9 8549 5930"
 )
 
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
