@@ -2,6 +2,7 @@ import os
 import xmlrpc.client
 import re
 import httpx
+import csv
 from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,19 +12,45 @@ from pydantic import BaseModel
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-@app.on_event("startup")
-async def startup():
-    await cargar_catalogos()
-    print("Bot listo")
-
 ODOO_URL  = os.environ.get("ODOO_URL",  "https://temponovo.odoo.com")
 ODOO_DB   = os.environ.get("ODOO_DB",   "cmcorpcl-temponovo-main-24490235")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_PASS = os.environ.get("ODOO_PASS", "")
 CATALOGOS_API_URL = "https://api.github.com/repos/natischnitzler/temponovo_catalogos/releases/tags/catalogos-latest"
+USUARIOS_URL = "https://raw.githubusercontent.com/natischnitzler/temponovo-bot/main/usuarios.csv"
 
 sesiones = {}
 _catalogos_cache = None
+_usuarios = {}  # { "+56985495930": {"tipo": "admin", "nombre": "Natalia"} }
+
+
+# ── Usuarios ──────────────────────────────────────────────────
+async def cargar_usuarios():
+    global _usuarios
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(USUARIOS_URL)
+            lineas = r.text.strip().split("\n")
+            for linea in lineas[1:]:  # saltar header
+                partes = [p.strip() for p in linea.split(",")]
+                if len(partes) >= 3:
+                    numero = partes[0].replace(" ", "")
+                    _usuarios[numero] = {"tipo": partes[1], "nombre": partes[2]}
+        print(f"Usuarios cargados: {len(_usuarios)}")
+    except Exception as e:
+        print(f"Error cargando usuarios: {e}")
+
+def get_usuario(numero_wa: str) -> dict:
+    # numero_wa viene como "whatsapp:+56985495930"
+    numero = numero_wa.replace("whatsapp:", "").replace(" ", "")
+    return _usuarios.get(numero, {"tipo": "publico", "nombre": ""})
+
+
+@app.on_event("startup")
+async def startup():
+    await cargar_catalogos()
+    await cargar_usuarios()
+    print("Bot listo")
 
 
 # ── Odoo ──────────────────────────────────────────────────────
@@ -184,7 +211,6 @@ async def cargar_catalogos():
             release = r.json()
             asset = next((a for a in release.get("assets", []) if a["name"] == "catalogos_links.json"), None)
             if not asset:
-                print("Asset catalogos_links.json no encontrado")
                 return {}
             r2 = await client.get(asset["browser_download_url"], headers={"Accept": "application/octet-stream"})
             _catalogos_cache = r2.json()
@@ -235,19 +261,15 @@ def generar_menu(catalogos: dict) -> tuple[str, dict]:
     return "\n".join(lineas), numeros
 
 NOMBRES_CATALOGOS_ALIAS = {
-    "clasico a-l": "Catalogo_Relojes_Casio_Clasico_A-L.pdf",
-    "clasico m-w": "Catalogo_Relojes_Casio_Clasico_M_W.pdf",
-    "despertadores": "Catalogo_Relojes_Casio_Despertadores.pdf",
-    "edifice": "Catalogo_Relojes_Casio_EdificeyDuro.pdf",
     "gshock": "Catalogo_Relojes_Casio_Gshock.pdf",
     "g-shock": "Catalogo_Relojes_Casio_Gshock.pdf",
-    "g shock": "Catalogo_Relojes_Casio_Gshock.pdf",
-    "murales": "Catalogo_Relojes_Casio_Murales_y_Crono.pdf",
+    "edifice": "Catalogo_Relojes_Casio_EdificeyDuro.pdf",
     "protreck": "Catalogo_Relojes_Casio_Protreck.pdf",
+    "despertadores": "Catalogo_Relojes_Casio_Despertadores.pdf",
+    "murales": "Catalogo_Relojes_Casio_Murales_y_Crono.pdf",
     "qq": "Catalogo_Relojes_QQ_Familia.pdf",
     "guess": "Catalogo_Relojes_Guess.pdf",
     "suizos": "Catalogo_Relojes_Suizos.pdf",
-    "economicos": "Catalogo_RelojesEconomicos.pdf",
     "timesonic": "Catalogo_Relojes_Timesonic.pdf",
     "calculadoras casio": "Catalogo_Calculadoras_Casio.pdf",
     "calculadoras economicas": "Catalogo_Calculadoras_Economicas.pdf",
@@ -260,8 +282,18 @@ NOMBRES_CATALOGOS_ALIAS = {
 }
 
 
-# ── Constantes de chat ────────────────────────────────────────
-BIENVENIDA = (
+# ── Mensajes ──────────────────────────────────────────────────
+def bienvenida_admin(nombre: str) -> str:
+    return (
+        f"👋 Hola, *{nombre}*!\n\n"
+        "Puedes consultar:\n"
+        "📦 *Stock* — escribe el producto o codigo\n"
+        "💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
+        "📂 *Catalogos* — escribe _catalogo_\n\n"
+        "En que te puedo ayudar?"
+    )
+
+BIENVENIDA_PUBLICA = (
     "👋 Hola! Bienvenido a *Temponovo*!\n\n"
     "Soy Temo, tu asistente 😊\n\n"
     "Puedes preguntarme por:\n"
@@ -301,21 +333,30 @@ async def whatsapp_webhook(request: Request):
     palabras  = set(body_norm.split())
     sesion    = sesiones.get(numero, {})
     media_url = None
+    usuario   = get_usuario(numero)
+    es_admin  = usuario["tipo"] in ("admin", "vendedor")
+
+    def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
-        if sesion.get("nombre"):
+        if es_admin:
+            respuesta = bienvenida_admin(usuario["nombre"])
+        elif sesion.get("nombre"):
             respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
                          "En que te puedo ayudar?\n"
                          "📦 Escribe un producto para ver su stock\n"
                          "💳 Escribe _cuenta_ para ver tu deuda\n"
                          "📂 Escribe _catalogo_ para ver lista de catalogos")
         else:
-            respuesta = BIENVENIDA
+            respuesta = BIENVENIDA_PUBLICA
 
     # Ayuda
     elif palabras & AYUDA:
-        respuesta = BIENVENIDA
+        if es_admin:
+            respuesta = bienvenida_admin(usuario["nombre"])
+        else:
+            respuesta = BIENVENIDA_PUBLICA
 
     # RUT
     elif es_rut(body):
@@ -323,53 +364,57 @@ async def whatsapp_webhook(request: Request):
         try:
             cliente = buscar_cliente_por_rut(rut_norm)
             if cliente["encontrado"]:
-                sesiones[numero] = {"partner_id": cliente["id"], "nombre": cliente["nombre"]}
-                respuesta = (f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
-                             "Con que quieres continuar?\n"
-                             "📦 Escribe un producto para ver su stock\n"
-                             "💳 Escribe _cuenta_ para ver tu deuda\n"
-                             "📂 Escribe _catalogo_ para ver lista de catalogos")
+                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
+                if es_admin:
+                    respuesta = (f"✅ *{cliente['nombre']}* encontrado.\n\n"
+                                 "📦 Escribe un producto para ver stock\n"
+                                 "💳 Escribe _cuenta_ para ver su deuda")
+                else:
+                    respuesta = (f"✅ Hola, *{cliente['nombre']}*! Ya te tengo en el sistema 🎉\n\n"
+                                 "Con que quieres continuar?\n"
+                                 "📦 Escribe un producto para ver su stock\n"
+                                 "💳 Escribe _cuenta_ para ver tu deuda\n"
+                                 "📂 Escribe _catalogo_ para ver lista de catalogos")
             else:
-                respuesta = (f"❌ No encontre un cliente con el RUT *{rut_norm}*.\n\n"
-                             "Verifica el numero o contacta a tu vendedor.")
+                respuesta = f"❌ No encontre un cliente con el RUT *{rut_norm}*."
         except Exception:
             respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo."
 
-    # Deuda
+    # Deuda / cuenta
     elif palabras & DEUDA:
-        if not sesion.get("partner_id"):
-            # Intentar buscar cliente por nombre si viene en el mismo mensaje
-            # ej: "cuenta de AD Joyas" o "deuda relojería central"
-            texto_sin_deuda = body_norm
-            for palabra in DEUDA:
-                texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
-            texto_sin_deuda = texto_sin_deuda.strip()
+        texto_sin_deuda = body_norm
+        for palabra in DEUDA:
+            texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
+        texto_sin_deuda = re.sub(r"\bde\b", "", texto_sin_deuda).strip()
 
-            if len(texto_sin_deuda) > 3:
-                try:
-                    clientes = buscar_cliente_por_nombre(texto_sin_deuda)
-                    if len(clientes) == 1:
-                        c = clientes[0]
-                        sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
-                        deuda = consultar_deuda(c["id"])
-                        respuesta = formatear_deuda(deuda, c["nombre"])
-                    elif len(clientes) > 1:
-                        lista = "\n".join([f"• {c['nombre']} ({c['rut']})" for c in clientes])
-                        respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
-                    else:
-                        respuesta = f"No encontre cliente con ese nombre. Escribe el *RUT* del cliente."
-                except Exception:
-                    respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo."
-            else:
-                respuesta = ("🔐 Escribe el *RUT* del cliente o *cuenta de [nombre]*\n_ej: cuenta de AD Joyas_")
-        else:
+        if len(texto_sin_deuda) > 3 and (es_admin or not sesion.get("partner_id")):
+            try:
+                clientes = buscar_cliente_por_nombre(texto_sin_deuda)
+                if len(clientes) == 1:
+                    c = clientes[0]
+                    sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
+                    deuda = consultar_deuda(c["id"])
+                    respuesta = formatear_deuda(deuda, c["nombre"])
+                elif len(clientes) > 1:
+                    lista = "\n".join([f"• {c['nombre']} ({c['rut']})" for c in clientes])
+                    respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
+                else:
+                    respuesta = "No encontre ese cliente. Prueba con el RUT."
+            except Exception:
+                respuesta = "⚠️ Error al buscar el cliente."
+        elif sesion.get("partner_id"):
             try:
                 deuda = consultar_deuda(sesion["partner_id"])
-                respuesta = formatear_deuda(deuda, sesion["nombre"])
+                respuesta = formatear_deuda(deuda, sesion.get("nombre","cliente"))
             except Exception:
-                respuesta = "⚠️ Error al consultar tus facturas. Intenta de nuevo."
+                respuesta = "⚠️ Error al consultar las facturas."
+        else:
+            if es_admin:
+                respuesta = "Escribe _cuenta de [nombre del cliente]_ o el RUT del cliente."
+            else:
+                respuesta = "🔐 Escribe tu *RUT* primero.\n_ej: 12.345.678-9_"
 
-    # Catálogos — mostrar menú
+    # Catálogos
     elif palabras & CATALOGO and len(body.split()) <= 2:
         catalogos = await cargar_catalogos()
         if not catalogos:
@@ -385,16 +430,17 @@ async def whatsapp_webhook(request: Request):
         archivo = None
         num = body_norm.strip()
 
-        # Volver al menú
-        if body_norm.strip() in {"menu", "lista", "volver", "catalogos", "catalogo"}:
-            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": sesion.get("menu_numeros", {})}
+        if num in {"menu", "lista", "volver", "catalogos", "catalogo"}:
             menu_txt, numeros = generar_menu(catalogos)
-            sesiones[numero]["menu_numeros"] = numeros
+            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
             respuesta = menu_txt
-            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Message>{xe(respuesta)}</Message>
+</Response>"""
             return PlainTextResponse(content=twiml, media_type="application/xml")
-        menu_numeros = sesion.get("menu_numeros", {})
 
+        menu_numeros = sesion.get("menu_numeros", {})
         if num in menu_numeros:
             archivo = menu_numeros[num]
         else:
@@ -405,13 +451,11 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            # Mantener esperando_catalogo para que pueda pedir otro sin escribir "catalogo"
             respuesta = "📎 Aqui va tu catalogo\n\nEscribe otro número para ver más, o _menu_ para volver a la lista."
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catalogo no esta disponible en este momento."
         else:
-            # No es número ni menu — salir del modo catálogo y buscar como producto
             sesiones[numero] = {**sesion, "esperando_catalogo": False}
             try:
                 termino = limpiar_termino(body)
@@ -429,8 +473,8 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
-    def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-    print(f"RESP: {respuesta[:80]}")
+    print(f"RESP [{usuario['tipo']}]: {respuesta[:60]}")
+
     if media_url:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
