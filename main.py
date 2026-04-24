@@ -67,11 +67,11 @@ def buscar_productos(termino: str) -> list:
         ODOO_DB, uid, ODOO_PASS,
         "product.template", "search_read",
         [[["active", "=", True], "|", ["name", "ilike", t], ["default_code", "ilike", t]]],
-        {"fields": ["name", "default_code", "list_price", "qty_available"], "limit": 20}
+        {"fields": ["name", "default_code", "list_price", "qty_available", "incoming_qty"], "limit": 20}
     )
     productos = [
         {"nombre": p["name"], "codigo": p.get("default_code") or "—",
-         "precio": p["list_price"], "stock": int(p.get("qty_available", 0))}
+         "precio": p["list_price"], "stock": int(p.get("qty_available", 0)), "entrante": int(p.get("incoming_qty", 0))}
         for p in resultados
     ]
     return sorted(productos, key=lambda x: x["stock"], reverse=True)
@@ -180,7 +180,9 @@ def formatear_wa(productos: list, termino: str) -> str:
                 "Intenta con otro termino:\n• _F-91_, _W-800_\n• _calculadora_, _MR-27_\n• _AA_, _AAA_")
     lineas = [f"📦 *{len(productos)} resultado{'s' if len(productos)>1 else ''}* para _{termino}_:\n"]
     for p in productos[:10]:
-        lineas.append(f"{stock_emoji(p['stock'])} {p['codigo']} | {fmt_monto(int(p['precio']))} | {stock_txt(p['stock'])}")
+        entrante = p.get("entrante", 0)
+        entrante_txt = f" | 📥 {entrante} en camino" if entrante > 0 else ""
+        lineas.append(f"{stock_emoji(p['stock'])} {p['codigo']} | {fmt_monto(int(p['precio']))} | {stock_txt(p['stock'])}{entrante_txt}")
     if len(productos) > 10:
         lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu busqueda._")
     return "\n".join(lineas)
