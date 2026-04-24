@@ -25,18 +25,80 @@ _usuarios = {}  # { "+56985495930": {"tipo": "admin", "nombre": "Natalia"} }
 
 
 # ── Usuarios ──────────────────────────────────────────────────
+def normalizar_numero(n: str) -> str:
+    """Normaliza número a formato +56XXXXXXXXX"""
+    if not n: return ""
+    n = re.sub(r"[\s\-\(\)]", "", n)
+    if n.startswith("09"): n = "+56" + n[1:]
+    elif n.startswith("9") and len(n) == 9: n = "+56" + n
+    elif n.startswith("56") and not n.startswith("+56"): n = "+" + n
+    return n
+
 async def cargar_usuarios():
     global _usuarios
     try:
+        # 1. Cargar admins desde CSV
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(USUARIOS_URL)
             lineas = r.text.strip().split("\n")
-            for linea in lineas[1:]:  # saltar header
+            for linea in lineas[1:]:
                 partes = [p.strip() for p in linea.split(",")]
                 if len(partes) >= 3:
-                    numero = partes[0].replace(" ", "")
+                    numero = normalizar_numero(partes[0])
                     _usuarios[numero] = {"tipo": partes[1], "nombre": partes[2]}
-        print(f"Usuarios cargados: {len(_usuarios)}")
+
+        # 2. Cargar vendedores desde Odoo (res.users internos con mobile)
+        def _cargar_vendedores():
+            uid, models = odoo_connect()
+            usuarios_odoo = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.users", "search_read",
+                [[["active", "=", True], ["share", "=", False]]],
+                {"fields": ["name", "partner_id"], "limit": 50}
+            )
+            partner_ids = [u["partner_id"][0] for u in usuarios_odoo if u.get("partner_id")]
+            partners = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.partner", "search_read",
+                [[["id", "in", partner_ids]]],
+                {"fields": ["id", "name", "mobile"]}
+            )
+            partner_map = {p["id"]: p for p in partners}
+            for u in usuarios_odoo:
+                pid = u["partner_id"][0] if u.get("partner_id") else None
+                p = partner_map.get(pid, {})
+                mobile = normalizar_numero(p.get("mobile") or "")
+                if mobile and mobile not in _usuarios:
+                    _usuarios[mobile] = {"tipo": "vendedor", "nombre": u["name"]}
+
+        # 3. Cargar clientes desde Odoo (res.partner empresas con mobile)
+        def _cargar_clientes():
+            uid, models = odoo_connect()
+            partners = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.partner", "search_read",
+                [[["is_company", "=", True], ["active", "=", True],
+                  ["mobile", "!=", False], ["customer_rank", ">", 0]]],
+                {"fields": ["id", "name", "vat", "mobile", "user_id"], "limit": 500}
+            )
+            for p in partners:
+                mobile = normalizar_numero(p.get("mobile") or "")
+                if mobile and mobile not in _usuarios:
+                    vendedor = p["user_id"][1] if p.get("user_id") else ""
+                    _usuarios[mobile] = {
+                        "tipo": "cliente",
+                        "nombre": p["name"],
+                        "partner_id": p["id"],
+                        "rut": p.get("vat", ""),
+                        "vendedor": vendedor
+                    }
+
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _cargar_vendedores)
+        await loop.run_in_executor(None, _cargar_clientes)
+
+        print(f"Usuarios cargados: {len(_usuarios)} (admins+vendedores+clientes)")
     except Exception as e:
         print(f"Error cargando usuarios: {e}")
 
@@ -340,9 +402,20 @@ async def whatsapp_webhook(request: Request):
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
+    # Auto-autenticar cliente si viene de Odoo
+    if usuario["tipo"] == "cliente" and not sesion.get("partner_id"):
+        sesiones[numero] = {
+            "partner_id": usuario.get("partner_id"),
+            "nombre": usuario["nombre"],
+            "rut": usuario.get("rut", "")
+        }
+        sesion = sesiones[numero]
+
     # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
         if es_admin:
+            respuesta = bienvenida_admin(usuario["nombre"])
+        elif usuario["tipo"] == "vendedor":
             respuesta = bienvenida_admin(usuario["nombre"])
         elif sesion.get("nombre"):
             respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
