@@ -117,7 +117,7 @@ async def startup():
     import asyncio
     async def recargar_periodico():
         while True:
-            await asyncio.sleep(1800)  # 30 minutos
+            await asyncio.sleep(86400)  # 24 horas
             global _usuarios
             _usuarios = {}
             await cargar_usuarios()
