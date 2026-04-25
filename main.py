@@ -21,7 +21,10 @@ USUARIOS_URL = "https://raw.githubusercontent.com/natischnitzler/temponovo-bot/m
 
 sesiones = {}
 _catalogos_cache = None
-_usuarios = {}  # { "+56985495930": {"tipo": "admin", "nombre": "Natalia"} }
+_usuarios = {}
+_stock_cache = {}    # { "codigo": {nombre, precio, stock, entrante} }
+_deuda_cache = {}    # { partner_id: {vencidas, pendientes} }
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "temponovo2025")
 
 
 # ── Usuarios ──────────────────────────────────────────────────
@@ -33,6 +36,71 @@ def normalizar_numero(n: str) -> str:
     elif n.startswith("9") and len(n) == 9: n = "+56" + n
     elif n.startswith("56") and not n.startswith("+56"): n = "+" + n
     return n
+
+async def cargar_stock_cache():
+    """Carga todos los productos en cache"""
+    global _stock_cache
+    try:
+        def _fetch():
+            uid, models = odoo_connect()
+            return models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "product.template", "search_read",
+                [[["active", "=", True], ["sale_ok", "=", True]]],
+                {"fields": ["name", "default_code", "list_price", "qty_available", "incoming_qty"], "limit": 2000}
+            )
+        import asyncio
+        loop = asyncio.get_event_loop()
+        productos = await loop.run_in_executor(None, _fetch)
+        _stock_cache = {}
+        for p in productos:
+            codigo = p.get("default_code") or ""
+            _stock_cache[p["id"]] = {
+                "nombre": p["name"],
+                "codigo": codigo or "—",
+                "precio": p["list_price"],
+                "stock": int(p.get("qty_available", 0)),
+                "entrante": int(p.get("incoming_qty", 0)),
+            }
+        print(f"Stock cacheado: {len(_stock_cache)} productos")
+    except Exception as e:
+        print(f"Error cargando stock: {e}")
+
+async def cargar_deuda_cache():
+    """Carga deudas de todos los clientes activos"""
+    global _deuda_cache
+    try:
+        def _fetch():
+            uid, models = odoo_connect()
+            from datetime import date
+            hoy = date.today().isoformat()
+            facturas = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "account.move", "search_read",
+                [[["move_type", "=", "out_invoice"],
+                  ["payment_state", "in", ["not_paid", "partial"]],
+                  ["state", "=", "posted"]]],
+                {"fields": ["partner_id", "name", "invoice_date_due", "amount_residual"], "limit": 5000}
+            )
+            cache = {}
+            for f in facturas:
+                pid = f["partner_id"][0] if f.get("partner_id") else None
+                if not pid: continue
+                if pid not in cache:
+                    cache[pid] = {"vencidas": [], "pendientes": []}
+                venc = f.get("invoice_date_due") or ""
+                item = {"factura": f["name"], "monto": round(f["amount_residual"]), "vencimiento": venc}
+                if venc and venc < hoy:
+                    cache[pid]["vencidas"].append(item)
+                else:
+                    cache[pid]["pendientes"].append(item)
+            return cache
+        import asyncio
+        loop = asyncio.get_event_loop()
+        _deuda_cache = await loop.run_in_executor(None, _fetch)
+        print(f"Deuda cacheada: {len(_deuda_cache)} clientes")
+    except Exception as e:
+        print(f"Error cargando deuda: {e}")
 
 async def cargar_usuarios():
     global _usuarios
@@ -110,18 +178,25 @@ def get_usuario(numero_wa: str) -> dict:
 
 @app.on_event("startup")
 async def startup():
+    import asyncio
     await cargar_catalogos()
     await cargar_usuarios()
+    await cargar_stock_cache()
+    await cargar_deuda_cache()
     print("Bot listo")
-    # Iniciar recarga periódica de usuarios
-    import asyncio
+
     async def recargar_periodico():
         while True:
             await asyncio.sleep(86400)  # 24 horas
-            global _usuarios
+            global _usuarios, _stock_cache, _deuda_cache
             _usuarios = {}
             await cargar_usuarios()
-            print("Usuarios recargados")
+            _stock_cache = {}
+            await cargar_stock_cache()
+            _deuda_cache = {}
+            await cargar_deuda_cache()
+            print("Cache recargado")
+
     asyncio.create_task(recargar_periodico())
 
 
@@ -133,12 +208,20 @@ def odoo_connect():
     return uid, models
 
 def buscar_productos(termino: str) -> list:
+    t = termino.strip().lower()
+    if _stock_cache:
+        # Buscar en cache
+        resultados = [
+            p for p in _stock_cache.values()
+            if t in p["nombre"].lower() or t in p["codigo"].lower()
+        ]
+        return sorted(resultados, key=lambda x: x["stock"], reverse=True)[:20]
+    # Fallback a Odoo si no hay cache
     uid, models = odoo_connect()
-    t = termino.strip()
     resultados = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         "product.template", "search_read",
-        [[["active", "=", True], "|", ["name", "ilike", t], ["default_code", "ilike", t]]],
+        [[["active", "=", True], "|", ["name", "ilike", termino], ["default_code", "ilike", termino]]],
         {"fields": ["name", "default_code", "list_price", "qty_available", "incoming_qty"], "limit": 20}
     )
     productos = [
@@ -149,6 +232,9 @@ def buscar_productos(termino: str) -> list:
     return sorted(productos, key=lambda x: x["stock"], reverse=True)
 
 def consultar_deuda(partner_id: int) -> dict:
+    if partner_id in _deuda_cache:
+        return _deuda_cache[partner_id]
+    # Fallback a Odoo si no está en cache
     uid, models = odoo_connect()
     facturas = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
@@ -594,12 +680,20 @@ def health():
     return {"status": "ok"}
 
 @app.get("/reload")
-async def reload():
-    global _usuarios
+async def reload(key: str = ""):
+    if key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    global _usuarios, _stock_cache, _deuda_cache
     _usuarios = {}
+    _stock_cache = {}
+    _deuda_cache = {}
     await cargar_usuarios()
-    return {"usuarios": len(_usuarios), "numeros": list(_usuarios.keys())}
+    await cargar_stock_cache()
+    await cargar_deuda_cache()
+    return {"usuarios": len(_usuarios), "stock": len(_stock_cache), "deuda": len(_deuda_cache)}
 
 @app.get("/usuarios")
-def ver_usuarios():
+def ver_usuarios(key: str = ""):
+    if key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="No autorizado")
     return {k: v for k, v in _usuarios.items()}
