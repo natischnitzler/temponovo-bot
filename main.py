@@ -365,7 +365,7 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
     if not v and not p:
         return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
     total = sum(f["monto"] for f in v + p)
-    lineas = [f"*{nombre}*\n💰 *Total adeudado: {fmt_monto(total)}*\n"]
+    lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
     if p:
         total_p = sum(f["monto"] for f in p)
         lineas.append(f"🟡 *Por vencer* ({len(p)} facturas) — {fmt_monto(total_p)}")
@@ -594,7 +594,7 @@ async def whatsapp_webhook(request: Request):
             texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
         texto_sin_deuda = re.sub(r"\bde\b", "", texto_sin_deuda).strip()
 
-        if len(texto_sin_deuda) > 3:
+        if len(texto_sin_deuda) >= 2:
             try:
                 vendedor_filtro = usuario["nombre"] if usuario["tipo"] == "vendedor" else ""
                 clientes = buscar_cliente_por_nombre(texto_sin_deuda, vendedor_filtro)
