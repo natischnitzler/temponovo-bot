@@ -367,11 +367,11 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
     lineas = [f"💰 *Total adeudado: {fmt_monto(total)}*\n"]
     if v:
         lineas.append(f"🔴 *Vencidas* — {fmt_monto(sum(f['monto'] for f in v))}")
-        for f in v: lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+        for f in v: lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
     if p:
         if v: lineas.append("")
         lineas.append(f"🟡 *Por vencer* — {fmt_monto(sum(f['monto'] for f in p))}")
-        for f in p: lineas.append(f"  • {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+        for f in p: lineas.append(f"  - {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
     return "\n".join(lineas)
 
 
