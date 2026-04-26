@@ -45,9 +45,9 @@ async def cargar_stock_cache():
             uid, models = odoo_connect()
             return models.execute_kw(
                 ODOO_DB, uid, ODOO_PASS,
-                "product.product", "search_read",
+                "product.template", "search_read",
                 [[["active", "=", True], ["sale_ok", "=", True]]],
-                {"fields": ["name", "default_code", "list_price", "free_qty", "incoming_qty"], "limit": 2000}
+                {"fields": ["name", "default_code", "list_price", "qty_available", "incoming_qty"], "limit": 2000}
             )
         import asyncio
         loop = asyncio.get_event_loop()
@@ -59,7 +59,7 @@ async def cargar_stock_cache():
                 "nombre": p["name"],
                 "codigo": codigo or "—",
                 "precio": p["list_price"],
-                "stock": int(p.get("free_qty", 0)),
+                "stock": int(p.get("qty_available", 0)),
                 "entrante": int(p.get("incoming_qty", 0)),
             }
         print(f"Stock cacheado: {len(_stock_cache)} productos")
@@ -226,7 +226,7 @@ def buscar_productos(termino: str) -> list:
     )
     productos = [
         {"nombre": p["name"], "codigo": p.get("default_code") or "—",
-         "precio": p["list_price"], "stock": int(p.get("free_qty", 0)), "entrante": int(p.get("incoming_qty", 0))}
+         "precio": p["list_price"], "stock": int(p.get("qty_available", 0)), "entrante": int(p.get("incoming_qty", 0))}
         for p in resultados
     ]
     return sorted(productos, key=lambda x: x["stock"], reverse=True)
