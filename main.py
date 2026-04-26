@@ -366,21 +366,21 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
         return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
     total = sum(f["monto"] for f in v + p)
     lineas = [f"💰 *Total adeudado: {fmt_monto(total)}*\n"]
-    if v:
-        total_v = sum(f["monto"] for f in v)
-        lineas.append(f"🔴 *Vencidas* ({len(v)} facturas) — {fmt_monto(total_v)}")
-        for f in v[:7]:
-            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
-        if len(v) > 7:
-            lineas.append(f"  _...y {len(v)-7} facturas mas_")
     if p:
-        if v: lineas.append("")
         total_p = sum(f["monto"] for f in p)
         lineas.append(f"🟡 *Por vencer* ({len(p)} facturas) — {fmt_monto(total_p)}")
         for f in p[:7]:
             lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
         if len(p) > 7:
             lineas.append(f"  _...y {len(p)-7} facturas mas_")
+    if v:
+        if p: lineas.append("")
+        total_v = sum(f["monto"] for f in v)
+        lineas.append(f"🔴 *Vencidas* ({len(v)} facturas) — {fmt_monto(total_v)}")
+        for f in v[:7]:
+            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+        if len(v) > 7:
+            lineas.append(f"  _...y {len(v)-7} facturas mas_")
     return "\n".join(lineas)
 
 
