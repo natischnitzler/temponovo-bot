@@ -592,7 +592,7 @@ async def whatsapp_webhook(request: Request):
         texto_sin_deuda = body_norm
         for palabra in DEUDA:
             texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
-        texto_sin_deuda = re.sub(r"\bde\b", "", texto_sin_deuda).strip()
+        texto_sin_deuda = texto_sin_deuda.strip()
 
         if len(texto_sin_deuda) >= 2:
             try:
@@ -606,7 +606,7 @@ async def whatsapp_webhook(request: Request):
                     deuda_txt = formatear_deuda(deuda, c["nombre"])
                     respuesta = deuda_txt
                 elif len(clientes) > 1:
-                    lista = "\n".join([f"• {c['nombre']} ({c['rut']})" for c in clientes])
+                    lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
                     respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
                 else:
                     respuesta = "No encontre ese cliente. Prueba con el RUT."
