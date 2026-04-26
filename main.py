@@ -563,6 +563,23 @@ async def whatsapp_webhook(request: Request):
 
     # Deuda / cuenta
     elif palabras & DEUDA:
+        # Primero verificar si viene un RUT en el mensaje
+        rut_match = re.search(r"0?\d{6,8}[-]?[\dkK]", body.replace(".", "").replace(" ", ""))
+        if rut_match:
+            rut_candidato = rut_match.group()
+            if es_rut(rut_candidato):
+                rut_norm = normalizar_rut(rut_candidato)
+                cliente = buscar_cliente_por_rut(rut_norm)
+                if cliente["encontrado"]:
+                    sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
+                    deuda = consultar_deuda(cliente["id"])
+                    deuda_txt = formatear_deuda(deuda, cliente["nombre"])
+                    respuesta = f"✅ *{cliente['nombre']}*\n\n{deuda_txt}"
+                else:
+                    respuesta = f"❌ No encontre cliente con RUT *{rut_norm}*."
+                twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+                return PlainTextResponse(content=twiml, media_type="application/xml")
+
         texto_sin_deuda = body_norm
         for palabra in DEUDA:
             texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
@@ -656,7 +673,7 @@ async def whatsapp_webhook(request: Request):
         except Exception:
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
 
-    print(f"RESP [{usuario['tipo']}]: {respuesta[:60]}")
+    print(f"RESP [{usuario['tipo']}]: {respuesta[:200]}")
 
     if media_url:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
