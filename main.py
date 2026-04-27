@@ -471,9 +471,9 @@ def bienvenida_admin(nombre: str) -> str:
     return (
         f"👋 Hola, *{nombre}*!\n\n"
         "Puedes consultar:\n"
-        "📦 *Stock* — escribe el producto o codigo\n"
-        "💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
-        "📂 *Catalogos* — escribe _catalogo_\n\n"
+        "1. 📦 *Stock* — escribe el producto o codigo\n"
+        "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
+        "3. 📂 *Catalogos* — escribe _catalogo_\n\n"
         "En que te puedo ayudar?"
     )
 
@@ -483,6 +483,8 @@ BIENVENIDA_PUBLICA = (
     "Contacta a Natalia para que te den acceso:\n"
     "📱 +56 9 8549 5930"
 )
+
+MENU_OPCIONES = {"1": "stock", "2": "cuenta", "3": "catalogo"}
 
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
@@ -517,6 +519,30 @@ async def whatsapp_webhook(request: Request):
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
+    # Detectar opciones de menú 1, 2, 3
+    if body_norm.strip() in MENU_OPCIONES and not sesion.get("esperando_catalogo"):
+        opcion = MENU_OPCIONES[body_norm.strip()]
+        if opcion == "stock":
+            respuesta = "📦 Escribe el producto o codigo que quieres consultar."
+        elif opcion == "cuenta":
+            if es_admin:
+                respuesta = "💳 Escribe _cuenta de [nombre]_ o el RUT del cliente."
+            elif sesion.get("partner_id"):
+                deuda = consultar_deuda(sesion["partner_id"])
+                respuesta = formatear_deuda(deuda, sesion.get("nombre", ""))
+            else:
+                respuesta = "💳 Escribe tu RUT para ver tu cuenta.\n_ej: 12.345.678-9_"
+        elif opcion == "catalogo":
+            catalogos = await cargar_catalogos()
+            if catalogos:
+                menu_txt, numeros = generar_menu(catalogos)
+                sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
+                respuesta = menu_txt
+            else:
+                respuesta = "⚠️ No se pudieron cargar los catalogos."
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+        return PlainTextResponse(content=twiml, media_type="application/xml")
+
     # Auto-autenticar cliente si viene de Odoo
     if usuario["tipo"] == "cliente" and not sesion.get("partner_id"):
         sesiones[numero] = {
@@ -535,9 +561,9 @@ async def whatsapp_webhook(request: Request):
         elif sesion.get("nombre"):
             respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
                          "En que te puedo ayudar?\n"
-                         "📦 Escribe un producto para ver su stock\n"
-                         "💳 Escribe _cuenta_ para ver tu deuda\n"
-                         "📂 Escribe _catalogo_ para ver lista de catalogos")
+                         "1. 📦 Stock — escribe el producto\n"
+                         "2. 💳 Cuenta — escribe _cuenta_\n"
+                         "3. 📂 Catalogos — escribe _catalogo_")
         else:
             respuesta = BIENVENIDA_PUBLICA
 
