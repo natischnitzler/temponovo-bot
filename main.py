@@ -129,13 +129,14 @@ async def cargar_usuarios():
                 ODOO_DB, uid, ODOO_PASS,
                 "res.partner", "search_read",
                 [[["id", "in", partner_ids]]],
-                {"fields": ["id", "name", "mobile"]}
+                {"fields": ["id", "name", "mobile", "phone"]}
             )
             partner_map = {p["id"]: p for p in partners}
             for u in usuarios_odoo:
                 pid = u["partner_id"][0] if u.get("partner_id") else None
                 p = partner_map.get(pid, {})
-                mobile = normalizar_numero(p.get("mobile") or "")
+                # Intentar mobile primero, luego phone
+                mobile = normalizar_numero(p.get("mobile") or p.get("phone") or "")
                 if mobile and mobile not in _usuarios:
                     _usuarios[mobile] = {"tipo": "vendedor", "nombre": u["name"]}
 
@@ -234,22 +235,8 @@ def buscar_productos(termino: str) -> list:
 def consultar_deuda(partner_id: int) -> dict:
     if partner_id in _deuda_cache:
         return _deuda_cache[partner_id]
-    # Fallback a Odoo si no está en cache
-    uid, models = odoo_connect()
-    facturas = models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS,
-        "account.move", "search_read",
-        [[["partner_id", "=", partner_id], ["move_type", "=", "out_invoice"],
-          ["payment_state", "in", ["not_paid", "partial"]], ["state", "=", "posted"]]],
-        {"fields": ["name", "invoice_date_due", "amount_residual"], "limit": 20}
-    )
-    hoy = date.today().isoformat()
-    vencidas, pendientes = [], []
-    for f in facturas:
-        venc = f.get("invoice_date_due") or ""
-        item = {"factura": f["name"], "monto": round(f["amount_residual"]), "vencimiento": venc}
-        (vencidas if venc and venc < hoy else pendientes).append(item)
-    return {"vencidas": vencidas, "pendientes": pendientes}
+    # No está en cache = no tiene facturas pendientes
+    return {"vencidas": [], "pendientes": []}
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
     uid, models = odoo_connect()
@@ -267,29 +254,33 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
     return {"encontrado": False}
 
 def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
-    uid, models = odoo_connect()
-    dominio = [["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]
-    
-    # Si es vendedor, filtrar solo sus clientes
-    if vendedor_nombre:
-        # Buscar el user_id del vendedor
-        usuarios = models.execute_kw(
+    """Siempre busca en Odoo directamente, no en cache"""
+    try:
+        uid, models = odoo_connect()
+        dominio = [["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]
+        
+        # Si es vendedor, filtrar solo sus clientes
+        if vendedor_nombre:
+            usuarios = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.users", "search_read",
+                [[["name", "ilike", vendedor_nombre]]],
+                {"fields": ["id", "name"], "limit": 3}
+            )
+            if usuarios:
+                user_ids = [u["id"] for u in usuarios]
+                dominio.append(["user_id", "in", user_ids])
+        
+        partners = models.execute_kw(
             ODOO_DB, uid, ODOO_PASS,
-            "res.users", "search_read",
-            [[["name", "ilike", vendedor_nombre]]],
-            {"fields": ["id", "name"], "limit": 3}
+            "res.partner", "search_read",
+            [dominio],
+            {"fields": ["id", "name", "vat"], "limit": 5}
         )
-        if usuarios:
-            user_ids = [u["id"] for u in usuarios]
-            dominio.append(["user_id", "in", user_ids])
-    
-    partners = models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS,
-        "res.partner", "search_read",
-        [dominio],
-        {"fields": ["id", "name", "vat"], "limit": 5}
-    )
-    return [{"id": p["id"], "nombre": p["name"], "rut": p.get("vat","")} for p in partners]
+        return [{"id": p["id"], "nombre": p["name"], "rut": p.get("vat","")} for p in partners]
+    except Exception as e:
+        print(f"Error buscar_cliente_por_nombre: {e}")
+        return []
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -623,7 +614,9 @@ async def whatsapp_webhook(request: Request):
         if len(texto_sin_deuda) >= 2:
             try:
                 vendedor_filtro = usuario["nombre"] if usuario["tipo"] == "vendedor" else ""
+                print(f"Buscando cliente: [{texto_sin_deuda}] vendedor: [{vendedor_filtro}]")
                 clientes = buscar_cliente_por_nombre(texto_sin_deuda, vendedor_filtro)
+                print(f"Encontrados: {len(clientes)} - {clientes}")
                 if len(clientes) == 1:
                     c = clientes[0]
                     # Limpiar sesión anterior y cargar nuevo cliente
