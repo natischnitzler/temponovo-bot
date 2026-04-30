@@ -875,7 +875,9 @@ async def whatsapp_webhook(request: Request):
 
         if len(texto_sin_pedido) >= 2:
             try:
+                print(f"Buscando pedidos cliente: [{texto_sin_pedido}]")
                 clientes = buscar_cliente_por_nombre(texto_sin_pedido, "" if es_admin else usuario.get("nombre",""))
+                print(f"Pedidos encontrados clientes: {len(clientes)} - {[c['nombre'] for c in clientes]}")
                 if len(clientes) == 1:
                     c = clientes[0]
                     sesiones[número] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
