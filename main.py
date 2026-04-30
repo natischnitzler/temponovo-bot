@@ -22,8 +22,10 @@ USUARIOS_URL = "https://raw.githubusercontent.com/natischnitzler/temponovo-bot/m
 sesiones = {}
 _catalogos_cache = None
 _usuarios = {}
-_stock_cache = {}    # { "codigo": {nombre, precio, stock, entrante} }
+_stock_cache = {}    # { id: {nombre, codigo, precio, stock, entrante} }
 _deuda_cache = {}    # { partner_id: {vencidas, pendientes} }
+_pedidos_cache = {}  # { partner_id: [{numero, total, estado, fecha}] }
+_pedidos_por_num = {}  # { "S04572": {numero, partner_id, partner_nombre, estado, fecha} }
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "temponovo2025")
 
 
@@ -65,6 +67,50 @@ async def cargar_stock_cache():
         print(f"Stock cacheado: {len(_stock_cache)} productos")
     except Exception as e:
         print(f"Error cargando stock: {e}")
+
+async def cargar_pedidos_cache():
+    """Carga pedidos de todos los clientes"""
+    global _pedidos_cache, _pedidos_por_num
+    try:
+        def _fetch():
+            uid, models = odoo_connect()
+            pedidos = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "sale.order", "search_read",
+                [[["state", "not in", ["cancel", "draft"]]]],
+                {"fields": ["name", "partner_id", "amount_total", "tempo_delivery_state", "date_order"],
+                 "limit": 5000, "order": "date_order desc"}
+            )
+            cache = {}
+            por_num = {}
+            for p in pedidos:
+                pid = p["partner_id"][0] if p.get("partner_id") else None
+                if not pid: continue
+                estado = ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", "—")
+                fecha = p.get("date_order", "")[:10] if p.get("date_order") else "—"
+                item = {
+                    "numero": p["name"],
+                    "total": round(p["amount_total"]),
+                    "estado": estado,
+                    "fecha": fecha,
+                }
+                if pid not in cache:
+                    cache[pid] = []
+                cache[pid].append(item)
+                por_num[p["name"]] = {
+                    "numero": p["name"],
+                    "partner_id": pid,
+                    "partner_nombre": p["partner_id"][1] if p.get("partner_id") else "—",
+                    "estado": estado,
+                    "fecha": fecha,
+                }
+            return cache, por_num
+        import asyncio
+        loop = asyncio.get_event_loop()
+        _pedidos_cache, _pedidos_por_num = await loop.run_in_executor(None, _fetch)
+        print(f"Pedidos cacheados: {len(_pedidos_cache)} clientes, {len(_pedidos_por_num)} pedidos")
+    except Exception as e:
+        print(f"Error cargando pedidos: {e}")
 
 async def cargar_deuda_cache():
     """Carga deudas de todos los clientes activos"""
@@ -184,6 +230,7 @@ async def startup():
     await cargar_usuarios()
     await cargar_stock_cache()
     await cargar_deuda_cache()
+    await cargar_pedidos_cache()
     print("Bot listo")
 
     async def recargar_periodico():
@@ -196,6 +243,9 @@ async def startup():
             await cargar_stock_cache()
             _deuda_cache = {}
             await cargar_deuda_cache()
+            _pedidos_cache.clear()
+            _pedidos_por_num.clear()
+            await cargar_pedidos_cache()
             print("Cache recargado")
 
     asyncio.create_task(recargar_periodico())
@@ -248,23 +298,7 @@ ESTADO_PEDIDO = {
 }
 
 def consultar_pedidos(partner_id: int, limite: int = 8) -> list:
-    uid, models = odoo_connect()
-    pedidos = models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS,
-        "sale.order", "search_read",
-        [[["partner_id", "=", partner_id], ["state", "!=", "cancel"]]],
-        {"fields": ["name", "amount_total", "tempo_delivery_state", "date_order"],
-         "limit": limite, "order": "date_order desc"}
-    )
-    return [
-        {
-            "numero": p["name"],
-            "total": round(p["amount_total"]),
-            "estado": ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", p.get("tempo_delivery_state") or "—"),
-            "fecha": p.get("date_order", "")[:10] if p.get("date_order") else "—",
-        }
-        for p in pedidos
-    ]
+    return _pedidos_cache.get(partner_id, [])[:limite]
 
 def formatear_pedidos(pedidos: list, nombre: str) -> str:
     if not pedidos:
@@ -644,8 +678,11 @@ async def whatsapp_webhook(request: Request):
         try:
             cliente = buscar_cliente_por_rut(rut_norm)
             if cliente["encontrado"]:
-                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
-                if es_admin:
+                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"], "contexto": ""}
+                if sesion.get("contexto") == "pedidos":
+                    pedidos = consultar_pedidos(cliente["id"])
+                    respuesta = formatear_pedidos(pedidos, cliente["nombre"])
+                elif es_admin:
                     # Admin ve la deuda directo
                     deuda = consultar_deuda(cliente["id"])
                     respuesta = formatear_deuda(deuda, cliente["nombre"])
@@ -801,12 +838,25 @@ async def whatsapp_webhook(request: Request):
                             fecha = datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
                         except: pass
                         cliente_nombre = p["partner_id"][1] if p.get("partner_id") else "—"
-                        lineas.append(f"{p['name']} | {fecha} | {estado}\n   {cliente_nombre}")
+                        lineas.append(f"{estado} {p['name']} | {fecha} | {cliente_nombre}")
                     respuesta = "\n".join(lineas)
                 else:
                     respuesta = f"No encontre el pedido *{num_match.group(0).upper()}*."
             except Exception as e:
                 respuesta = f"⚠️ Error buscando pedido: {e}"
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+            return PlainTextResponse(content=twiml, media_type="application/xml")
+
+        # Si el texto sin pedido es un RUT, buscar directamente
+        if es_rut(texto_sin_pedido):
+            rut_norm = normalizar_rut(texto_sin_pedido)
+            cliente = buscar_cliente_por_rut(rut_norm)
+            if cliente["encontrado"]:
+                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
+                pedidos = consultar_pedidos(cliente["id"])
+                respuesta = formatear_pedidos(pedidos, cliente["nombre"])
+            else:
+                respuesta = f"❌ No encontre cliente con RUT *{rut_norm}*."
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
             return PlainTextResponse(content=twiml, media_type="application/xml")
 
@@ -820,6 +870,7 @@ async def whatsapp_webhook(request: Request):
                     respuesta = formatear_pedidos(pedidos, c["nombre"])
                 elif len(clientes) > 1:
                     lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
+                    sesiones[numero] = {**sesion, "contexto": "pedidos"}
                     respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
                     respuesta = "No encontre ese cliente. Prueba con el RUT."
@@ -875,10 +926,13 @@ async def reload(key: str = ""):
     _usuarios = {}
     _stock_cache = {}
     _deuda_cache = {}
+    _pedidos_cache.clear()
+    _pedidos_por_num.clear()
     await cargar_usuarios()
     await cargar_stock_cache()
     await cargar_deuda_cache()
-    return {"usuarios": len(_usuarios), "stock": len(_stock_cache), "deuda": len(_deuda_cache)}
+    await cargar_pedidos_cache()
+    return {"usuarios": len(_usuarios), "stock": len(_stock_cache), "deuda": len(_deuda_cache), "pedidos": len(_pedidos_por_num)}
 
 @app.get("/usuarios")
 def ver_usuarios(key: str = ""):
