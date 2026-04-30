@@ -79,7 +79,7 @@ async def cargar_pedidos_cache():
                 "sale.order", "search_read",
                 [[["state", "not in", ["cancel", "draft"]]]],
                 {"fields": ["name", "partner_id", "amount_total", "tempo_delivery_state", "date_order"],
-                 "limit": 5000, "order": "date_order desc"}
+                 "limit": 10000, "order": "date_order desc"}
             )
             cache = {}
             por_num = {}
@@ -234,8 +234,21 @@ async def startup():
     print("Bot listo")
 
     async def recargar_periodico():
+        from datetime import datetime, timezone, timedelta
+        tz_santiago = timezone(timedelta(hours=-3))
         while True:
-            await asyncio.sleep(86400)  # 24 horas
+            ahora = datetime.now(tz_santiago)
+            hora = ahora.hour
+            # Esperar hasta la próxima recarga (12:00 o 18:00)
+            if hora < 12:
+                espera = (12 - hora) * 3600 - ahora.minute * 60 - ahora.second
+            elif hora < 18:
+                espera = (18 - hora) * 3600 - ahora.minute * 60 - ahora.second
+            else:
+                # Esperar hasta las 12 del día siguiente
+                espera = (24 - hora + 12) * 3600 - ahora.minute * 60 - ahora.second
+            print(f"Proxima recarga en {espera//3600}h {(espera%3600)//60}m")
+            await asyncio.sleep(espera)
             global _usuarios, _stock_cache, _deuda_cache
             _usuarios = {}
             await cargar_usuarios()
@@ -246,7 +259,7 @@ async def startup():
             _pedidos_cache.clear()
             _pedidos_por_num.clear()
             await cargar_pedidos_cache()
-            print("Cache recargado")
+            print(f"Cache recargado a las {datetime.now(tz_santiago).strftime('%H:%M')}")
 
     asyncio.create_task(recargar_periodico())
 
