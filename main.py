@@ -257,7 +257,17 @@ def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
     """Siempre busca en Odoo directamente, no en cache"""
     try:
         uid, models = odoo_connect()
-        dominio = [["name", "ilike", nombre], ["is_company", "=", True], ["active", "=", True]]
+        # Buscar con el término original y también sin caracteres especiales
+        terminos = [nombre]
+        nombre_limpio = re.sub(r"[^a-z0-9\s]", " ", nombre).strip()
+        if nombre_limpio != nombre:
+            terminos.append(nombre_limpio)
+        
+        dominio_base = [["is_company", "=", True], ["active", "=", True]]
+        if len(terminos) == 1:
+            dominio = [["name", "ilike", nombre]] + dominio_base
+        else:
+            dominio = ["|", ["name", "ilike", terminos[0]], ["name", "ilike", terminos[1]]] + dominio_base
         
         # Si es vendedor, filtrar solo sus clientes
         if vendedor_nombre:
@@ -271,6 +281,18 @@ def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
                 user_ids = [u["id"] for u in usuarios]
                 dominio.append(["user_id", "in", user_ids])
         
+        # Filtrar por vendedor si aplica
+        if vendedor_nombre:
+            usuarios = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.users", "search_read",
+                [[["name", "ilike", vendedor_nombre]]],
+                {"fields": ["id"], "limit": 3}
+            )
+            if usuarios:
+                user_ids = [u["id"] for u in usuarios]
+                dominio = dominio + [["user_id", "in", user_ids]]
+
         partners = models.execute_kw(
             ODOO_DB, uid, ODOO_PASS,
             "res.partner", "search_read",
