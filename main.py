@@ -238,6 +238,49 @@ def consultar_deuda(partner_id: int) -> dict:
     # No está en cache = no tiene facturas pendientes
     return {"vencidas": [], "pendientes": []}
 
+ESTADO_PEDIDO = {
+    "quotation":  "Cotizacion",
+    "confirmed":  "Confirmado",
+    "pick":       "Facturado",
+    "pack":       "Pronto a despachar",
+    "delivered":  "Entregado",
+    "cancel":     "Cancelado",
+}
+
+def consultar_pedidos(partner_id: int, limite: int = 8) -> list:
+    uid, models = odoo_connect()
+    pedidos = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASS,
+        "sale.order", "search_read",
+        [[["partner_id", "=", partner_id], ["state", "!=", "cancel"]]],
+        {"fields": ["name", "amount_total", "tempo_delivery_state", "date_order"],
+         "limit": limite, "order": "date_order desc"}
+    )
+    return [
+        {
+            "numero": p["name"],
+            "total": round(p["amount_total"]),
+            "estado": ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", p.get("tempo_delivery_state") or "—"),
+            "fecha": p.get("date_order", "")[:10] if p.get("date_order") else "—",
+        }
+        for p in pedidos
+    ]
+
+def formatear_pedidos(pedidos: list, nombre: str) -> str:
+    if not pedidos:
+        return f"📋 *{nombre}* no tiene pedidos recientes."
+    lineas = [f"📋 *Pedidos de {nombre}*:\n"]
+    for p in pedidos:
+        fecha = ""
+        if p["fecha"] and p["fecha"] != "—":
+            try:
+                from datetime import datetime
+                fecha = " | " + datetime.strptime(p["fecha"], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except:
+                fecha = ""
+        lineas.append(f"{p['numero']} | {fmt_monto(p['total'])} | {p['estado']}{fecha}")
+    return "\n".join(lineas)
+
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
     uid, models = odoo_connect()
     digitos = re.sub(r"[^0-9kK]", "", rut_normalizado).upper()
@@ -486,7 +529,8 @@ def bienvenida_admin(nombre: str) -> str:
         "Puedes consultar:\n"
         "1. 📦 *Stock* — escribe el producto o codigo\n"
         "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
-        "3. 📂 *Catalogos* — escribe _catalogo_\n\n"
+        "3. 📂 *Catalogos* — escribe _catalogo_\n"
+        "4. 📋 *Pedidos* — escribe _pedidos de [cliente]_\n\n"
         "En que te puedo ayudar?"
     )
 
@@ -497,12 +541,13 @@ BIENVENIDA_PUBLICA = (
     "📱 +56 9 8549 5930"
 )
 
-MENU_OPCIONES = {"1": "stock", "2": "cuenta", "3": "catalogo"}
+MENU_OPCIONES = {"1": "stock", "2": "cuenta", "3": "catalogo", "4": "pedido"}
 
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
 DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
 CATALOGO = {"catalogo","catalogos","pdf","catalogue"}
+PEDIDO   = {"pedido","pedidos","orden","ordenes","compra","compras"}
 
 
 # ── Endpoints ─────────────────────────────────────────────────
@@ -553,6 +598,12 @@ async def whatsapp_webhook(request: Request):
                 respuesta = menu_txt
             else:
                 respuesta = "⚠️ No se pudieron cargar los catalogos."
+        elif opcion == "pedido":
+            if sesion.get("partner_id"):
+                pedidos = consultar_pedidos(sesion["partner_id"])
+                respuesta = formatear_pedidos(pedidos, sesion.get("nombre",""))
+            else:
+                respuesta = "Escribe _pedidos de [nombre]_ o el RUT del cliente."
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
         return PlainTextResponse(content=twiml, media_type="application/xml")
 
@@ -717,6 +768,41 @@ async def whatsapp_webhook(request: Request):
                 respuesta = formatear_wa(productos, termino)
             except Exception:
                 respuesta = "⚠️ Hubo un error. Intenta de nuevo."
+
+    # Pedidos
+    elif palabras & PEDIDO:
+        texto_sin_pedido = body_norm
+        for p in PEDIDO:
+            texto_sin_pedido = texto_sin_pedido.replace(p, "").strip()
+        texto_sin_pedido = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_pedido).strip()
+
+        partner_id = sesion.get("partner_id")
+        nombre_cliente = sesion.get("nombre", "")
+
+        if len(texto_sin_pedido) >= 2:
+            try:
+                clientes = buscar_cliente_por_nombre(texto_sin_pedido, "" if es_admin else usuario.get("nombre",""))
+                if len(clientes) == 1:
+                    c = clientes[0]
+                    sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
+                    pedidos = consultar_pedidos(c["id"])
+                    respuesta = formatear_pedidos(pedidos, c["nombre"])
+                elif len(clientes) > 1:
+                    lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
+                    respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
+                else:
+                    respuesta = "No encontre ese cliente. Prueba con el RUT."
+            except Exception as e:
+                print(f"Error pedidos: {e}")
+                respuesta = "⚠️ Error al consultar pedidos."
+        elif partner_id:
+            pedidos = consultar_pedidos(partner_id)
+            respuesta = formatear_pedidos(pedidos, nombre_cliente)
+        else:
+            if es_admin:
+                respuesta = "Escribe _pedidos de [nombre]_ o el RUT del cliente."
+            else:
+                respuesta = "Escribe tu RUT primero para ver tus pedidos."
 
     # Búsqueda de producto
     else:
