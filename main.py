@@ -239,12 +239,12 @@ def consultar_deuda(partner_id: int) -> dict:
     return {"vencidas": [], "pendientes": []}
 
 ESTADO_PEDIDO = {
-    "quotation":  "Cotizacion",
-    "confirmed":  "Confirmado",
-    "pick":       "Facturado",
-    "pack":       "Pronto a despachar",
-    "delivered":  "Entregado",
-    "cancel":     "Cancelado",
+    "quotation":  "⏰ Cotizacion",
+    "confirmed":  "✔ Confirmado",
+    "pick":       "🧾 Facturado",
+    "pack":       "📦 Pronto a despachar",
+    "delivered":  "🚚 Entregado",
+    "cancel":     "❌ Cancelado",
 }
 
 def consultar_pedidos(partner_id: int, limite: int = 8) -> list:
@@ -278,7 +278,7 @@ def formatear_pedidos(pedidos: list, nombre: str) -> str:
                 fecha = " | " + datetime.strptime(p["fecha"], "%Y-%m-%d").strftime("%d/%m/%Y")
             except:
                 fecha = ""
-        lineas.append(f"{p['numero']} | {fmt_monto(p['total'])} | {p['estado']}{fecha}")
+        lineas.append(f"{p['estado']} {p['numero']} | {fecha.replace(' | ', '')}")
     return "\n".join(lineas)
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
@@ -778,6 +778,37 @@ async def whatsapp_webhook(request: Request):
 
         partner_id = sesion.get("partner_id")
         nombre_cliente = sesion.get("nombre", "")
+
+        # Buscar por número de pedido (ej: "pedido 4521" o "pedido S04521")
+        num_match = re.search(r"s?0*(\d{4,})", texto_sin_pedido, re.IGNORECASE)
+        if num_match and len(texto_sin_pedido) <= 8:
+            num = num_match.group(1)
+            try:
+                uid, models = odoo_connect()
+                pedidos = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASS,
+                    "sale.order", "search_read",
+                    [[["name", "like", num]]],
+                    {"fields": ["name", "partner_id", "amount_total", "tempo_delivery_state", "date_order"], "limit": 3}
+                )
+                if pedidos:
+                    lineas = []
+                    for p in pedidos:
+                        estado = ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", "—")
+                        fecha = p.get("date_order", "")[:10]
+                        try:
+                            from datetime import datetime
+                            fecha = datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
+                        except: pass
+                        cliente_nombre = p["partner_id"][1] if p.get("partner_id") else "—"
+                        lineas.append(f"{p['name']} | {fecha} | {estado}\n   {cliente_nombre}")
+                    respuesta = "\n".join(lineas)
+                else:
+                    respuesta = f"No encontre el pedido *{num_match.group(0).upper()}*."
+            except Exception as e:
+                respuesta = f"⚠️ Error buscando pedido: {e}"
+            twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+            return PlainTextResponse(content=twiml, media_type="application/xml")
 
         if len(texto_sin_pedido) >= 2:
             try:
