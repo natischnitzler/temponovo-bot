@@ -24,13 +24,13 @@ _catalogos_cache = None
 _usuarios = {}
 _stock_cache = {}    # { id: {nombre, codigo, precio, stock, entrante} }
 _deuda_cache = {}    # { partner_id: {vencidas, pendientes} }
-_pedidos_cache = {}  # { partner_id: [{numero, total, estado, fecha}] }
-_pedidos_por_num = {}  # { "S04572": {numero, partner_id, partner_nombre, estado, fecha} }
+_pedidos_cache = {}  # { partner_id: [{número, total, estado, fecha}] }
+_pedidos_por_num = {}  # { "S04572": {número, partner_id, partner_nombre, estado, fecha} }
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "temponovo2025")
 
 
 # ── Usuarios ──────────────────────────────────────────────────
-def normalizar_numero(n: str) -> str:
+def normalizar_número(n: str) -> str:
     """Normaliza número a formato +56XXXXXXXXX"""
     if not n: return ""
     n = re.sub(r"[\s\-\(\)]", "", n)
@@ -89,7 +89,7 @@ async def cargar_pedidos_cache():
                 estado = ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", "—")
                 fecha = p.get("date_order", "")[:10] if p.get("date_order") else "—"
                 item = {
-                    "numero": p["name"],
+                    "número": p["name"],
                     "total": round(p["amount_total"]),
                     "estado": estado,
                     "fecha": fecha,
@@ -98,7 +98,7 @@ async def cargar_pedidos_cache():
                     cache[pid] = []
                 cache[pid].append(item)
                 por_num[p["name"]] = {
-                    "numero": p["name"],
+                    "número": p["name"],
                     "partner_id": pid,
                     "partner_nombre": p["partner_id"][1] if p.get("partner_id") else "—",
                     "estado": estado,
@@ -158,8 +158,8 @@ async def cargar_usuarios():
             for linea in lineas[1:]:
                 partes = [p.strip() for p in linea.split(",")]
                 if len(partes) >= 3:
-                    numero = normalizar_numero(partes[0])
-                    _usuarios[numero] = {"tipo": partes[1], "nombre": partes[2]}
+                    número = normalizar_número(partes[0])
+                    _usuarios[número] = {"tipo": partes[1], "nombre": partes[2]}
 
         # 2. Cargar vendedores desde Odoo (res.users internos con mobile)
         def _cargar_vendedores():
@@ -182,7 +182,7 @@ async def cargar_usuarios():
                 pid = u["partner_id"][0] if u.get("partner_id") else None
                 p = partner_map.get(pid, {})
                 # Intentar mobile primero, luego phone
-                mobile = normalizar_numero(p.get("mobile") or p.get("phone") or "")
+                mobile = normalizar_número(p.get("mobile") or p.get("phone") or "")
                 if mobile and mobile not in _usuarios:
                     _usuarios[mobile] = {"tipo": "vendedor", "nombre": u["name"]}
 
@@ -197,7 +197,7 @@ async def cargar_usuarios():
                 {"fields": ["id", "name", "vat", "mobile", "user_id"], "limit": 500}
             )
             for p in partners:
-                mobile = normalizar_numero(p.get("mobile") or "")
+                mobile = normalizar_número(p.get("mobile") or "")
                 if mobile and mobile not in _usuarios:
                     vendedor = p["user_id"][1] if p.get("user_id") else ""
                     _usuarios[mobile] = {
@@ -217,10 +217,10 @@ async def cargar_usuarios():
     except Exception as e:
         print(f"Error cargando usuarios: {e}")
 
-def get_usuario(numero_wa: str) -> dict:
-    # numero_wa viene como "whatsapp:+56985495930"
-    numero = numero_wa.replace("whatsapp:", "").replace(" ", "")
-    return _usuarios.get(numero, {"tipo": "publico", "nombre": ""})
+def get_usuario(número_wa: str) -> dict:
+    # número_wa viene como "whatsapp:+56985495930"
+    número = número_wa.replace("whatsapp:", "").replace(" ", "")
+    return _usuarios.get(número, {"tipo": "publico", "nombre": ""})
 
 
 @app.on_event("startup")
@@ -247,7 +247,7 @@ async def startup():
             else:
                 # Esperar hasta las 12 del día siguiente
                 espera = (24 - hora + 12) * 3600 - ahora.minute * 60 - ahora.second
-            print(f"Proxima recarga en {espera//3600}h {(espera%3600)//60}m")
+            print(f"Próxima recarga en {espera//3600}h {(espera%3600)//60}m")
             await asyncio.sleep(espera)
             global _usuarios, _stock_cache, _deuda_cache
             _usuarios = {}
@@ -304,7 +304,7 @@ def consultar_deuda(partner_id: int) -> dict:
 ESTADO_PEDIDO = {
     "quotation":  "⏰ Cotizacion",
     "confirmed":  "✔ Confirmado",
-    "pick":       "🧾 Facturado",
+    "pick":       "💰 Facturado",
     "pack":       "📦 Pronto a despachar",
     "delivered":  "🚚 Entregado",
     "cancel":     "❌ Cancelado",
@@ -325,7 +325,7 @@ def formatear_pedidos(pedidos: list, nombre: str) -> str:
                 fecha = " | " + datetime.strptime(p["fecha"], "%Y-%m-%d").strftime("%d/%m/%Y")
             except:
                 fecha = ""
-        lineas.append(f"{p['estado']} {p['numero']} | {fecha.replace(' | ', '')}")
+        lineas.append(f"{p['estado']} {p['número']} | {fecha.replace(' | ', '')}")
     return "\n".join(lineas)
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
@@ -452,7 +452,7 @@ def limpiar_termino(texto: str) -> str:
 
 def formatear_wa(productos: list, termino: str) -> str:
     if not productos:
-        return (f"😕 No encontre productos para *{termino}*.\n\n"
+        return (f"😕 No encontré productos para *{termino}*.\n\n"
                 "Intenta con otro termino:\n• _F-91_, _W-800_\n• _calculadora_, _MR-27_\n• _AA_, _AAA_")
     lineas = [f"📦 *{len(productos)} resultado{'s' if len(productos)>1 else ''}* para _{termino}_:\n"]
     for p in productos[:10]:
@@ -466,7 +466,7 @@ def formatear_wa(productos: list, termino: str) -> str:
 def formatear_deuda(deuda: dict, nombre: str) -> str:
     v, p = deuda["vencidas"], deuda["pendientes"]
     if not v and not p:
-        return f"✅ *{nombre}* no tiene facturas pendientes. Todo al dia!"
+        return f"✅ *{nombre}* no tiene facturas pendientes. Todo al día!"
     total = sum(f["monto"] for f in v + p)
     lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
     if p:
@@ -537,15 +537,15 @@ NOMBRES_LEGIBLES = {
 NUMEROS_CATALOGOS = {}
 
 def generar_menu(catalogos: dict) -> tuple[str, dict]:
-    numeros = {}
+    números = {}
     lineas = ["📂 *Catálogos disponibles:*\n"]
     for i, archivo in enumerate(catalogos.keys()):
         emoji = NUM_EMOJIS[i] if i < len(NUM_EMOJIS) else f"{i+1}."
         nombre = NOMBRES_LEGIBLES.get(archivo, archivo.replace("_", " ").replace(".pdf", ""))
         lineas.append(f"{emoji} {nombre}")
-        numeros[str(i + 1)] = archivo
+        números[str(i + 1)] = archivo
     lineas.append("\nEscribe el *número* del catálogo que quieres recibir.")
-    return "\n".join(lineas), numeros
+    return "\n".join(lineas), números
 
 NOMBRES_CATALOGOS_ALIAS = {
     "gshock": "Catalogo_Relojes_Casio_Gshock.pdf",
@@ -576,8 +576,8 @@ def bienvenida_admin(nombre: str) -> str:
         "Puedes consultar:\n"
         "1. 📦 *Stock* — escribe el producto o codigo\n"
         "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
-        "3. 📂 *Catalogos* — escribe _catalogo_\n"
-        "4. 📋 *Pedidos* — escribe _pedidos de [cliente]_\n\n"
+        "3. 📂 *Catálogos* — escribe _catálogo_\n"
+        "4. 📋 *Estado de pedidos* — escribe _pedidos de [cliente]_ o número de pedido\n\n"
         "En que te puedo ayudar?"
     )
 
@@ -613,13 +613,13 @@ def consultar_stock(req: StockRequest):
 async def whatsapp_webhook(request: Request):
     form    = await request.form()
     body    = form.get("Body", "").strip()
-    numero  = form.get("From", "").strip()
+    número  = form.get("From", "").strip()
 
     body_norm = normalizar_texto(body)
     palabras  = set(body_norm.split())
-    sesion    = sesiones.get(numero, {})
+    sesion    = sesiones.get(número, {})
     media_url = None
-    usuario   = get_usuario(numero)
+    usuario   = get_usuario(número)
     es_admin  = usuario["tipo"] in ("admin", "vendedor")
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
@@ -640,11 +640,11 @@ async def whatsapp_webhook(request: Request):
         elif opcion == "catalogo":
             catalogos = await cargar_catalogos()
             if catalogos:
-                menu_txt, numeros = generar_menu(catalogos)
-                sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
+                menu_txt, números = generar_menu(catalogos)
+                sesiones[número] = {**sesion, "esperando_catalogo": True, "menu_números": números}
                 respuesta = menu_txt
             else:
-                respuesta = "⚠️ No se pudieron cargar los catalogos."
+                respuesta = "⚠️ No se pudieron cargar los catálogos."
         elif opcion == "pedido":
             if sesion.get("partner_id"):
                 pedidos = consultar_pedidos(sesion["partner_id"])
@@ -656,12 +656,12 @@ async def whatsapp_webhook(request: Request):
 
     # Auto-autenticar cliente si viene de Odoo
     if usuario["tipo"] == "cliente" and not sesion.get("partner_id"):
-        sesiones[numero] = {
+        sesiones[número] = {
             "partner_id": usuario.get("partner_id"),
             "nombre": usuario["nombre"],
             "rut": usuario.get("rut", "")
         }
-        sesion = sesiones[numero]
+        sesion = sesiones[número]
 
     # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
@@ -674,7 +674,7 @@ async def whatsapp_webhook(request: Request):
                          "En que te puedo ayudar?\n"
                          "1. 📦 Stock — escribe el producto\n"
                          "2. 💳 Cuenta — escribe _cuenta_\n"
-                         "3. 📂 Catalogos — escribe _catalogo_")
+                         "3. 📂 Catálogos — escribe _catálogo_")
         else:
             respuesta = BIENVENIDA_PUBLICA
 
@@ -691,7 +691,7 @@ async def whatsapp_webhook(request: Request):
         try:
             cliente = buscar_cliente_por_rut(rut_norm)
             if cliente["encontrado"]:
-                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"], "contexto": ""}
+                sesiones[número] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"], "contexto": ""}
                 if sesion.get("contexto") == "pedidos":
                     pedidos = consultar_pedidos(cliente["id"])
                     respuesta = formatear_pedidos(pedidos, cliente["nombre"])
@@ -704,9 +704,9 @@ async def whatsapp_webhook(request: Request):
                                  "Con que quieres continuar?\n"
                                  "📦 Escribe un producto para ver su stock\n"
                                  "💳 Escribe _cuenta_ para ver tu deuda\n"
-                                 "📂 Escribe _catalogo_ para ver lista de catalogos")
+                                 "📂 Escribe _catálogo_ para ver lista de catálogos")
             else:
-                respuesta = f"❌ No encontre un cliente con el RUT *{rut_norm}*."
+                respuesta = f"❌ No encontré un cliente con el RUT *{rut_norm}*."
         except Exception:
             respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo."
 
@@ -720,12 +720,12 @@ async def whatsapp_webhook(request: Request):
                 rut_norm = normalizar_rut(rut_candidato)
                 cliente = buscar_cliente_por_rut(rut_norm)
                 if cliente["encontrado"]:
-                    sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
+                    sesiones[número] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
                     deuda = consultar_deuda(cliente["id"])
                     deuda_txt = formatear_deuda(deuda, cliente["nombre"])
                     respuesta = f"✅ *{cliente['nombre']}*\n\n{deuda_txt}"
                 else:
-                    respuesta = f"❌ No encontre cliente con RUT *{rut_norm}*."
+                    respuesta = f"❌ No encontré cliente con RUT *{rut_norm}*."
                 twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
                 return PlainTextResponse(content=twiml, media_type="application/xml")
 
@@ -746,15 +746,15 @@ async def whatsapp_webhook(request: Request):
                 if len(clientes) == 1:
                     c = clientes[0]
                     # Limpiar sesión anterior y cargar nuevo cliente
-                    sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
+                    sesiones[número] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
                     deuda = consultar_deuda(c["id"])
                     deuda_txt = formatear_deuda(deuda, c["nombre"])
                     respuesta = deuda_txt
                 elif len(clientes) > 1:
                     lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
-                    respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
+                    respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
                 else:
-                    respuesta = "No encontre ese cliente. Prueba con el RUT."
+                    respuesta = "No encontré ese cliente. Prueba con el RUT."
             except Exception:
                 respuesta = "⚠️ Error al buscar el cliente."
         elif sesion.get("partner_id"):
@@ -773,10 +773,10 @@ async def whatsapp_webhook(request: Request):
     elif palabras & CATALOGO:
         catalogos = await cargar_catalogos()
         if not catalogos:
-            respuesta = "⚠️ No se pudieron cargar los catalogos. Intenta de nuevo."
+            respuesta = "⚠️ No se pudieron cargar los catálogos. Intenta de nuevo."
         else:
-            menu_txt, numeros = generar_menu(catalogos)
-            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
+            menu_txt, números = generar_menu(catalogos)
+            sesiones[número] = {**sesion, "esperando_catalogo": True, "menu_números": números}
             respuesta = menu_txt
 
     # Selección de catálogo
@@ -786,8 +786,8 @@ async def whatsapp_webhook(request: Request):
         num = body_norm.strip()
 
         if num in {"menu", "lista", "volver", "catalogos", "catalogo"}:
-            menu_txt, numeros = generar_menu(catalogos)
-            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
+            menu_txt, números = generar_menu(catalogos)
+            sesiones[número] = {**sesion, "esperando_catalogo": True, "menu_números": números}
             respuesta = menu_txt
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -795,9 +795,9 @@ async def whatsapp_webhook(request: Request):
 </Response>"""
             return PlainTextResponse(content=twiml, media_type="application/xml")
 
-        menu_numeros = sesion.get("menu_numeros", {})
-        if num in menu_numeros:
-            archivo = menu_numeros[num]
+        menu_números = sesion.get("menu_números", {})
+        if num in menu_números:
+            archivo = menu_números[num]
         else:
             for key, val in NOMBRES_CATALOGOS_ALIAS.items():
                 if key in body_norm:
@@ -806,12 +806,12 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            respuesta = "📎 Aqui va tu catalogo\n\nEscribe otro número para ver más, o _menu_ para volver a la lista."
+            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro número para ver más, o _menu_ para volver a la lista."
             media_url = url
         elif archivo:
-            respuesta = "⚠️ Ese catalogo no esta disponible en este momento."
+            respuesta = "⚠️ Ese catálogo no esta disponible en este momento."
         else:
-            sesiones[numero] = {**sesion, "esperando_catalogo": False}
+            sesiones[número] = {**sesion, "esperando_catalogo": False}
             try:
                 termino = limpiar_termino(body)
                 productos = buscar_productos(termino)
@@ -854,7 +854,7 @@ async def whatsapp_webhook(request: Request):
                         lineas.append(f"{estado} {p['name']} | {fecha} | {cliente_nombre}")
                     respuesta = "\n".join(lineas)
                 else:
-                    respuesta = f"No encontre el pedido *{num_match.group(0).upper()}*."
+                    respuesta = f"No encontré el pedido *{num_match.group(0).upper()}*."
             except Exception as e:
                 respuesta = f"⚠️ Error buscando pedido: {e}"
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
@@ -865,11 +865,11 @@ async def whatsapp_webhook(request: Request):
             rut_norm = normalizar_rut(texto_sin_pedido)
             cliente = buscar_cliente_por_rut(rut_norm)
             if cliente["encontrado"]:
-                sesiones[numero] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
+                sesiones[número] = {**sesion, "partner_id": cliente["id"], "nombre": cliente["nombre"]}
                 pedidos = consultar_pedidos(cliente["id"])
                 respuesta = formatear_pedidos(pedidos, cliente["nombre"])
             else:
-                respuesta = f"❌ No encontre cliente con RUT *{rut_norm}*."
+                respuesta = f"❌ No encontré cliente con RUT *{rut_norm}*."
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
             return PlainTextResponse(content=twiml, media_type="application/xml")
 
@@ -878,15 +878,15 @@ async def whatsapp_webhook(request: Request):
                 clientes = buscar_cliente_por_nombre(texto_sin_pedido, "" if es_admin else usuario.get("nombre",""))
                 if len(clientes) == 1:
                     c = clientes[0]
-                    sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
+                    sesiones[número] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"]}
                     pedidos = consultar_pedidos(c["id"])
                     respuesta = formatear_pedidos(pedidos, c["nombre"])
                 elif len(clientes) > 1:
                     lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
-                    sesiones[numero] = {**sesion, "contexto": "pedidos"}
-                    respuesta = f"Encontre varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
+                    sesiones[número] = {**sesion, "contexto": "pedidos"}
+                    respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
-                    respuesta = "No encontre ese cliente. Prueba con el RUT."
+                    respuesta = "No encontré ese cliente. Prueba con el RUT."
             except Exception as e:
                 print(f"Error pedidos: {e}")
                 respuesta = "⚠️ Error al consultar pedidos."
