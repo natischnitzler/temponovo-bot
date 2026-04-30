@@ -606,10 +606,13 @@ async def whatsapp_webhook(request: Request):
                 twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
                 return PlainTextResponse(content=twiml, media_type="application/xml")
 
+        # Sacar frases completas primero, luego palabras sueltas
         texto_sin_deuda = body_norm
+        for frase in ["cuenta de", "deuda de", "factura de", "saldo de"]:
+            texto_sin_deuda = texto_sin_deuda.replace(frase, "").strip()
         for palabra in DEUDA:
             texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
-        texto_sin_deuda = texto_sin_deuda.strip()
+        texto_sin_deuda = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_deuda).strip()
 
         if len(texto_sin_deuda) >= 2:
             try:
@@ -644,7 +647,7 @@ async def whatsapp_webhook(request: Request):
                 respuesta = "🔐 Escribe tu *RUT* primero.\n_ej: 12.345.678-9_"
 
     # Catálogos
-    elif palabras & CATALOGO and len(body.split()) <= 2:
+    elif palabras & CATALOGO:
         catalogos = await cargar_catalogos()
         if not catalogos:
             respuesta = "⚠️ No se pudieron cargar los catalogos. Intenta de nuevo."
