@@ -335,12 +335,15 @@ def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
         ODOO_DB, uid, ODOO_PASS,
         "res.partner", "search_read",
         [[["vat", "like", digitos[:7]], ["is_company", "=", True], ["active", "=", True]]],
-        {"fields": ["id", "name", "vat"], "limit": 5}
+        {"fields": ["id", "name", "vat", "parent_id"], "limit": 5}
     )
     for p in partners:
         vat_digits = re.sub(r"[^0-9kK]", "", (p.get("vat") or "").upper())
         if vat_digits == digitos:
-            return {"encontrado": True, "id": p["id"], "nombre": p["name"]}
+            # Si es una dirección (tiene parent), usar el partner principal
+            pid = p["parent_id"][0] if p.get("parent_id") else p["id"]
+            nombre = p["parent_id"][1] if p.get("parent_id") else p["name"]
+            return {"encontrado": True, "id": pid, "nombre": nombre}
     return {"encontrado": False}
 
 def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
