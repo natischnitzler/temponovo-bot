@@ -776,8 +776,9 @@ async def whatsapp_webhook(request: Request):
         texto_sin_deuda = body_norm
         for frase in ["cuenta de", "deuda de", "factura de", "saldo de"]:
             texto_sin_deuda = texto_sin_deuda.replace(frase, "").strip()
-        for palabra in DEUDA:
+        for palabra in sorted(DEUDA, key=len, reverse=True):
             texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
+        texto_sin_deuda = re.sub(r"^[^a-z0-9]+", "", texto_sin_deuda)
         texto_sin_deuda = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_deuda).strip()
 
         if len(texto_sin_deuda) >= 2:
@@ -794,8 +795,9 @@ async def whatsapp_webhook(request: Request):
                     deuda_txt = formatear_deuda(deuda, c["nombre"])
                     respuesta = deuda_txt
                 elif len(clientes) > 1:
-                    opciones = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(clientes[:5])])
-                    sesiones[numero] = {**sesion, "clientes_lista": clientes[:5], "contexto_lista": "cuenta"}
+                    lista5 = clientes[:5]
+                    opciones = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(lista5)])
+                    sesiones[numero] = {**sesion, "clientes_lista": lista5, "contexto_lista": "cuenta"}
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el número para ver su cuenta."
                 else:
                     respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
@@ -866,8 +868,10 @@ async def whatsapp_webhook(request: Request):
     # Pedidos
     elif palabras & PEDIDO:
         texto_sin_pedido = body_norm
-        for p in PEDIDO:
+        # Ordenar por largo para reemplazar primero los más largos
+        for p in sorted(PEDIDO, key=len, reverse=True):
             texto_sin_pedido = texto_sin_pedido.replace(p, "").strip()
+        texto_sin_pedido = re.sub(r"^[^a-z0-9]+", "", texto_sin_pedido)  # quitar caracteres sueltos al inicio
         texto_sin_pedido = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_pedido).strip()
 
         partner_id = sesion.get("partner_id")
