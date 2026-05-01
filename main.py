@@ -801,7 +801,8 @@ async def whatsapp_webhook(request: Request):
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el número para ver su cuenta."
                 else:
                     respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
-            except Exception:
+            except Exception as e:
+                print(f"ERROR DEUDA: {e}")
                 respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
         elif sesion.get("partner_id"):
             try:
