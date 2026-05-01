@@ -751,7 +751,7 @@ async def whatsapp_webhook(request: Request):
             else:
                 respuesta = f"❌ No encontré un cliente con el RUT *{rut_norm}*."
         except Exception:
-            respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo."
+            respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
 
     # Deuda / cuenta
     elif palabras & DEUDA:
@@ -798,15 +798,15 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "clientes_lista": clientes[:5], "contexto_lista": "cuenta"}
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el número para ver su cuenta."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT."
+                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
             except Exception:
-                respuesta = "⚠️ Error al buscar el cliente."
+                respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
         elif sesion.get("partner_id"):
             try:
                 deuda = consultar_deuda(sesion["partner_id"])
                 respuesta = formatear_deuda(deuda, sesion.get("nombre","cliente"))
             except Exception:
-                respuesta = "⚠️ Error al consultar las facturas."
+                respuesta = "⚠️ Error al consultar las facturas.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
         else:
             if es_admin:
                 respuesta = "Escribe _cuenta de [nombre del cliente]_ o el RUT del cliente."
@@ -861,7 +861,7 @@ async def whatsapp_webhook(request: Request):
                 productos = buscar_productos(termino)
                 respuesta = formatear_wa(productos, termino)
             except Exception:
-                respuesta = "⚠️ Hubo un error. Intenta de nuevo."
+                respuesta = "⚠️ Hubo un error. Intenta de nuevo.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
 
     # Pedidos
     elif palabras & PEDIDO:
@@ -932,10 +932,10 @@ async def whatsapp_webhook(request: Request):
                     sesiones[número] = {**sesion, "contexto": "pedidos"}
                     respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT."
+                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
             except Exception as e:
                 print(f"Error pedidos: {e}")
-                respuesta = "⚠️ Error al consultar pedidos."
+                respuesta = "⚠️ Error al consultar pedidos.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
         elif partner_id:
             pedidos = consultar_pedidos(partner_id)
             respuesta = formatear_pedidos(pedidos, nombre_cliente)
@@ -952,7 +952,7 @@ async def whatsapp_webhook(request: Request):
             productos = buscar_productos(termino)
             respuesta = formatear_wa(productos, termino)
         except Exception:
-            respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento."
+            respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
 
     print(f"RESP [{usuario['tipo']}]: {respuesta[:200]}")
 
