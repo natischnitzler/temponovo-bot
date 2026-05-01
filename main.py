@@ -346,7 +346,7 @@ def consultar_pedidos_cliente(partner_id: int) -> list:
 
 def formatear_pedidos(pedidos: list, nombre: str) -> str:
     if not pedidos:
-        return f"📋 *{nombre}* no tiene pedidos recientes."
+        return f"📋 *{nombre}* no tiene pedidos recientes.\n\n_Escribe *0* o *menu* para volver al menú principal._"
     lineas = [f"📋 *Pedidos de {nombre}*:\n"]
     for p in pedidos:
         fecha = ""
@@ -357,7 +357,7 @@ def formatear_pedidos(pedidos: list, nombre: str) -> str:
             except:
                 fecha = ""
         lineas.append(f"{p['estado']} {p['numero']} | {fecha.replace(' | ', '')}")
-    lineas.append("\n_Escribe *0* para volver al menú._")
+    lineas.append("\n\n_Escribe *0* o *menu* para volver al menú principal._")
     return "\n".join(lineas)
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
@@ -495,13 +495,7 @@ def formatear_wa(productos: list, termino: str) -> str:
         lineas.append(f"{stock_emoji(p['stock'])} {p['codigo']} | {fmt_monto(int(p['precio']))} | {stock_txt(p['stock'])}{entrante_txt}")
     if len(productos) > 10:
         lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu búsqueda._")
-    lineas.append("\n_Escribe *0* para volver al menú._")
-    return "\n".join(lineas)
-
-def formatear_deuda(deuda: dict, nombre: str) -> str:
-    v, p = deuda["vencidas"], deuda["pendientes"]
-    if not v and not p:
-        return f"✅ *{nombre}* no tiene facturas pendientes. ¡Todo al día! 🎉"
+    lineas.append("\n\n_Escribe *0* o *menu* para volver al menú principal._")
     total = sum(f["monto"] for f in v + p)
     lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
     if p:
@@ -918,7 +912,7 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro *número* para ver más, _menu_ para la lista de catálogos o *0* para el menú principal."
+            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro *número* para ver más o _menu_ para la lista de catálogos.\n\n_Escribe *0* o *menu* para volver al menú principal._"
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catálogo no esta disponible en este momento."
