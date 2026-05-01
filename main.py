@@ -624,8 +624,16 @@ def consultar_stock(req: StockRequest):
 @app.post("/whatsapp")
 async def whatsapp_webhook(request: Request):
     form    = await request.form()
-    body    = form.get("Body", "").strip()
-    numero  = form.get("From", "").strip()
+    body       = form.get("Body", "").strip()
+    numero     = form.get("From", "").strip()
+    num_media  = int(form.get("NumMedia", "0") or "0")
+
+    # Si manda media (foto, audio, video, documento)
+    if num_media > 0 and not body:
+        def xe_early(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        msg = "Lo siento, no puedo procesar imágenes, audios ni videos 😊\n\nPuedo ayudarte con texto:\n1. 📦 Stock\n2. 💳 Cuenta\n3. 📂 Catálogos\n4. 📋 Estado de pedidos"
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe_early(msg)}</Message>\n</Response>"""
+        return PlainTextResponse(content=twiml, media_type="application/xml")
 
     body_norm = normalizar_texto(body)
     palabras  = set(body_norm.split())
