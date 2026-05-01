@@ -573,9 +573,16 @@ NOMBRES_CATALOGOS_ALIAS = {
 
 
 # ── Mensajes ──────────────────────────────────────────────────
+def saludo_hora() -> str:
+    from datetime import datetime, timezone, timedelta
+    hora = datetime.now(timezone(timedelta(hours=-3))).hour
+    if hora < 12: return "🌅 Buenos días"
+    if hora < 19: return "☀️ Buenas tardes"
+    return "🌙 Buenas noches"
+
 def bienvenida_admin(nombre: str) -> str:
     return (
-        f"👋 Hola, *{nombre}*!\n\n"
+        f"{saludo_hora()}, *{nombre}*!\n\n"
         "Puedes consultar:\n"
         "1. 📦 *Stock* — escribe el producto o codigo\n"
         "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
@@ -594,6 +601,8 @@ BIENVENIDA_PUBLICA = (
 MENU_OPCIONES = {"1": "stock", "2": "cuenta", "3": "catalogo", "4": "pedido"}
 
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
+GRACIAS  = {"gracias","thank","thanks","dale","ok","oki","listo","perfecto","excelente","genial","bacán","bacan"}
+DESPEDIDA = {"chao","adios","bye","hasta","nos","vemos","cuidate"}
 AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
 DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
 CATALOGO = {"catalogo","catalogos","pdf","catalogue"}
@@ -627,8 +636,39 @@ async def whatsapp_webhook(request: Request):
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
+    # Detectar gracias y despedidas
+    if palabras & GRACIAS and len(body.split()) <= 4:
+        respuesta = "¡Con gusto! 😊 Escribe si necesitas algo más."
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+        return PlainTextResponse(content=twiml, media_type="application/xml")
+
+    if palabras & DESPEDIDA and len(body.split()) <= 3:
+        respuesta = f"{saludo_hora()}! Hasta pronto 👋"
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+        return PlainTextResponse(content=twiml, media_type="application/xml")
+
+    # Selección de cliente por número (1, 2, 3...)
+    if sesion.get("clientes_lista") and body_norm.strip().isdigit():
+        idx = int(body_norm.strip()) - 1
+        lista = sesion["clientes_lista"]
+        contexto = sesion.get("contexto_lista", "cuenta")
+        if 0 <= idx < len(lista):
+            c = lista[idx]
+            sesiones[numero] = {**sesion, "partner_id": c["id"], "nombre": c["nombre"], "clientes_lista": None}
+            if contexto == "pedidos":
+                pedidos = consultar_pedidos(c["id"])
+                respuesta = formatear_pedidos(pedidos, c["nombre"])
+            else:
+                deuda = consultar_deuda(c["id"])
+                deuda_txt = formatear_deuda(deuda, c["nombre"])
+                respuesta = deuda_txt
+        else:
+            respuesta = f"Escribe un número entre 1 y {len(lista)}."
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
+        return PlainTextResponse(content=twiml, media_type="application/xml")
+
     # Detectar opciones de menú 1, 2, 3
-    if body_norm.strip() in MENU_OPCIONES and not sesion.get("esperando_catalogo"):
+    if body_norm.strip() in MENU_OPCIONES and not sesion.get("esperando_catalogo") and not sesion.get("clientes_lista"):
         opcion = MENU_OPCIONES[body_norm.strip()]
         if opcion == "stock":
             respuesta = "📦 Escribe el producto o codigo que quieres consultar."
@@ -754,8 +794,9 @@ async def whatsapp_webhook(request: Request):
                     deuda_txt = formatear_deuda(deuda, c["nombre"])
                     respuesta = deuda_txt
                 elif len(clientes) > 1:
-                    lista = "\n".join([f"- {c['nombre']} ({c['rut']})" for c in clientes])
-                    respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT del que quieres consultar."
+                    opciones = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(clientes[:5])])
+                    sesiones[numero] = {**sesion, "clientes_lista": clientes[:5], "contexto_lista": "cuenta"}
+                    respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el número para ver su cuenta."
                 else:
                     respuesta = "No encontré ese cliente. Prueba con el RUT."
             except Exception:
