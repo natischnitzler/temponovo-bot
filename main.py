@@ -24,14 +24,14 @@ _catalogos_cache = None
 _usuarios = {}
 _stock_cache = {}    # { id: {nombre, codigo, precio, stock, entrante} }
 _deuda_cache = {}    # { partner_id: {vencidas, pendientes} }
-_pedidos_cache = {}  # { partner_id: [{número, total, estado, fecha}] }
-_pedidos_por_num = {}  # { "S04572": {número, partner_id, partner_nombre, estado, fecha} }
+_pedidos_cache = {}  # { partner_id: [{numero, total, estado, fecha}] }
+_pedidos_por_num = {}  # { "S04572": {numero, partner_id, partner_nombre, estado, fecha} }
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "temponovo2025")
 
 
 # ── Usuarios ──────────────────────────────────────────────────
-def normalizar_número(n: str) -> str:
-    """Normaliza número a formato +56XXXXXXXXX"""
+def normalizar_numero(n: str) -> str:
+    """Normaliza numero a formato +56XXXXXXXXX"""
     if not n: return ""
     n = re.sub(r"[\s\-\(\)]", "", n)
     if n.startswith("09"): n = "+56" + n[1:]
@@ -89,7 +89,7 @@ async def cargar_pedidos_cache():
                 estado = ESTADO_PEDIDO.get(p.get("tempo_delivery_state") or "", "—")
                 fecha = p.get("date_order", "")[:10] if p.get("date_order") else "—"
                 item = {
-                    "número": p["name"],
+                    "numero": p["name"],
                     "total": round(p["amount_total"]),
                     "estado": estado,
                     "fecha": fecha,
@@ -98,7 +98,7 @@ async def cargar_pedidos_cache():
                     cache[pid] = []
                 cache[pid].append(item)
                 por_num[p["name"]] = {
-                    "número": p["name"],
+                    "numero": p["name"],
                     "partner_id": pid,
                     "partner_nombre": p["partner_id"][1] if p.get("partner_id") else "—",
                     "estado": estado,
@@ -158,8 +158,8 @@ async def cargar_usuarios():
             for linea in lineas[1:]:
                 partes = [p.strip() for p in linea.split(",")]
                 if len(partes) >= 3:
-                    número = normalizar_número(partes[0])
-                    _usuarios[número] = {"tipo": partes[1], "nombre": partes[2]}
+                    numero = normalizar_numero(partes[0])
+                    _usuarios[numero] = {"tipo": partes[1], "nombre": partes[2]}
 
         # 2. Cargar vendedores desde Odoo (res.users internos con mobile)
         def _cargar_vendedores():
@@ -182,7 +182,7 @@ async def cargar_usuarios():
                 pid = u["partner_id"][0] if u.get("partner_id") else None
                 p = partner_map.get(pid, {})
                 # Intentar mobile primero, luego phone
-                mobile = normalizar_número(p.get("mobile") or p.get("phone") or "")
+                mobile = normalizar_numero(p.get("mobile") or p.get("phone") or "")
                 if mobile and mobile not in _usuarios:
                     _usuarios[mobile] = {"tipo": "vendedor", "nombre": u["name"]}
 
@@ -197,7 +197,7 @@ async def cargar_usuarios():
                 {"fields": ["id", "name", "vat", "mobile", "user_id"], "limit": 500}
             )
             for p in partners:
-                mobile = normalizar_número(p.get("mobile") or "")
+                mobile = normalizar_numero(p.get("mobile") or "")
                 if mobile and mobile not in _usuarios:
                     vendedor = p["user_id"][1] if p.get("user_id") else ""
                     _usuarios[mobile] = {
@@ -217,10 +217,10 @@ async def cargar_usuarios():
     except Exception as e:
         print(f"Error cargando usuarios: {e}")
 
-def get_usuario(número_wa: str) -> dict:
-    # número_wa viene como "whatsapp:+56985495930"
-    número = número_wa.replace("whatsapp:", "").replace(" ", "")
-    return _usuarios.get(número, {"tipo": "publico", "nombre": ""})
+def get_usuario(numero_wa: str) -> dict:
+    # numero_wa viene como "whatsapp:+56985495930"
+    numero = numero_wa.replace("whatsapp:", "").replace(" ", "")
+    return _usuarios.get(numero, {"tipo": "publico", "nombre": ""})
 
 
 @app.on_event("startup")
@@ -325,7 +325,7 @@ def formatear_pedidos(pedidos: list, nombre: str) -> str:
                 fecha = " | " + datetime.strptime(p["fecha"], "%Y-%m-%d").strftime("%d/%m/%Y")
             except:
                 fecha = ""
-        lineas.append(f"{p['estado']} {p['número']} | {fecha.replace(' | ', '')}")
+        lineas.append(f"{p['estado']} {p['numero']} | {fecha.replace(' | ', '')}")
     return "\n".join(lineas)
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
@@ -540,15 +540,15 @@ NOMBRES_LEGIBLES = {
 NUMEROS_CATALOGOS = {}
 
 def generar_menu(catalogos: dict) -> tuple[str, dict]:
-    números = {}
+    numeros = {}
     lineas = ["📂 *Catálogos disponibles:*\n"]
     for i, archivo in enumerate(catalogos.keys()):
         emoji = NUM_EMOJIS[i] if i < len(NUM_EMOJIS) else f"{i+1}."
         nombre = NOMBRES_LEGIBLES.get(archivo, archivo.replace("_", " ").replace(".pdf", ""))
         lineas.append(f"{emoji} {nombre}")
-        números[str(i + 1)] = archivo
-    lineas.append("\nEscribe el *número* del catálogo que quieres recibir.")
-    return "\n".join(lineas), números
+        numeros[str(i + 1)] = archivo
+    lineas.append("\nEscribe el *numero* del catálogo que quieres recibir.")
+    return "\n".join(lineas), numeros
 
 NOMBRES_CATALOGOS_ALIAS = {
     "gshock": "Catalogo_Relojes_Casio_Gshock.pdf",
@@ -587,7 +587,7 @@ def bienvenida_admin(nombre: str) -> str:
         "1. 📦 *Stock* — escribe el producto o codigo\n"
         "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
         "3. 📂 *Catálogos* — escribe _catálogo_\n"
-        "4. 📋 *Estado de pedidos* — escribe _pedidos de [cliente]_ o número de pedido\n\n"
+        "4. 📋 *Estado de pedidos* — escribe _pedidos de [cliente]_ o numero de pedido\n\n"
         "En que te puedo ayudar?"
     )
 
@@ -625,13 +625,13 @@ def consultar_stock(req: StockRequest):
 async def whatsapp_webhook(request: Request):
     form    = await request.form()
     body    = form.get("Body", "").strip()
-    número  = form.get("From", "").strip()
+    numero  = form.get("From", "").strip()
 
     body_norm = normalizar_texto(body)
     palabras  = set(body_norm.split())
-    sesion    = sesiones.get(número, {})
+    sesion    = sesiones.get(numero, {})
     media_url = None
-    usuario   = get_usuario(número)
+    usuario   = get_usuario(numero)
     es_admin  = usuario["tipo"] in ("admin", "vendedor")
 
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
@@ -647,7 +647,7 @@ async def whatsapp_webhook(request: Request):
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
         return PlainTextResponse(content=twiml, media_type="application/xml")
 
-    # Selección de cliente por número (1, 2, 3...)
+    # Selección de cliente por numero (1, 2, 3...)
     if sesion.get("clientes_lista") and body_norm.strip().isdigit():
         idx = int(body_norm.strip()) - 1
         lista = sesion["clientes_lista"]
@@ -663,7 +663,7 @@ async def whatsapp_webhook(request: Request):
                 deuda_txt = formatear_deuda(deuda, c["nombre"])
                 respuesta = deuda_txt
         else:
-            respuesta = f"Escribe un número entre 1 y {len(lista)}."
+            respuesta = f"Escribe un numero entre 1 y {len(lista)}."
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>{xe(respuesta)}</Message>\n</Response>"""
         return PlainTextResponse(content=twiml, media_type="application/xml")
 
@@ -683,8 +683,8 @@ async def whatsapp_webhook(request: Request):
         elif opcion == "catalogo":
             catalogos = await cargar_catalogos()
             if catalogos:
-                menu_txt, números = generar_menu(catalogos)
-                sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_números": números}
+                menu_txt, numeros = generar_menu(catalogos)
+                sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
                 respuesta = menu_txt
             else:
                 respuesta = "⚠️ No se pudieron cargar los catálogos."
@@ -798,7 +798,7 @@ async def whatsapp_webhook(request: Request):
                     lista5 = clientes[:5]
                     opciones = "\n".join([f"{i+1}. {c['nombre']}" for i, c in enumerate(lista5)])
                     sesiones[numero] = {**sesion, "clientes_lista": lista5, "contexto_lista": "cuenta"}
-                    respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el número para ver su cuenta."
+                    respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el numero para ver su cuenta."
                 else:
                     respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nPara más información contáctate con la oficina:\n📞 Estrella +56 9 6292 9654"
             except Exception as e:
@@ -822,8 +822,8 @@ async def whatsapp_webhook(request: Request):
         if not catalogos:
             respuesta = "⚠️ No se pudieron cargar los catálogos. Intenta de nuevo."
         else:
-            menu_txt, números = generar_menu(catalogos)
-            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_números": números}
+            menu_txt, numeros = generar_menu(catalogos)
+            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
             respuesta = menu_txt
 
     # Selección de catálogo
@@ -833,8 +833,8 @@ async def whatsapp_webhook(request: Request):
         num = body_norm.strip()
 
         if num in {"menu", "lista", "volver", "catalogos", "catalogo"}:
-            menu_txt, números = generar_menu(catalogos)
-            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_números": números}
+            menu_txt, numeros = generar_menu(catalogos)
+            sesiones[numero] = {**sesion, "esperando_catalogo": True, "menu_numeros": numeros}
             respuesta = menu_txt
             twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -842,9 +842,9 @@ async def whatsapp_webhook(request: Request):
 </Response>"""
             return PlainTextResponse(content=twiml, media_type="application/xml")
 
-        menu_números = sesion.get("menu_números", {})
-        if num in menu_números:
-            archivo = menu_números[num]
+        menu_numeros = sesion.get("menu_numeros", {})
+        if num in menu_numeros:
+            archivo = menu_numeros[num]
         else:
             for key, val in NOMBRES_CATALOGOS_ALIAS.items():
                 if key in body_norm:
@@ -853,7 +853,7 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro número para ver más, o _menu_ para volver a la lista."
+            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro numero para ver más, o _menu_ para volver a la lista."
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catálogo no esta disponible en este momento."
@@ -878,7 +878,7 @@ async def whatsapp_webhook(request: Request):
         partner_id = sesion.get("partner_id")
         nombre_cliente = sesion.get("nombre", "")
 
-        # Buscar por número de pedido (ej: "pedido 4521" o "pedido S04521")
+        # Buscar por numero de pedido (ej: "pedido 4521" o "pedido S04521")
         num_match = re.search(r"s?0*(\d{4,})", texto_sin_pedido, re.IGNORECASE)
         if num_match and len(texto_sin_pedido) <= 8:
             num = num_match.group(1)
