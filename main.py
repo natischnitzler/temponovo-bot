@@ -344,6 +344,58 @@ def consultar_pedidos_cliente(partner_id: int) -> list:
     """Para clientes: solo los últimos 5"""
     return _pedidos_cache.get(partner_id, [])[:5]
 
+def formatear_deuda(deuda: dict, nombre: str) -> str:
+    v, p = deuda["vencidas"], deuda["pendientes"]
+    hint = "\n\n_Escribe *0* o *menu* para volver al menú principal._"
+    if not v and not p:
+        return "✅ *" + nombre + "* no tiene facturas pendientes. ¡Todo al día! 🎉" + hint
+    total = sum(f["monto"] for f in v + p)
+    lineas = ["💰 *" + nombre + "*\n💰 *Total deuda: " + fmt_monto(total) + "*\n"]
+    if p:
+        total_p = sum(f["monto"] for f in p)
+        nfac_p = "factura" if len(p)==1 else "facturas"
+        lineas.append("🟡 *Por vencer* (" + str(len(p)) + " " + nfac_p + ") — " + fmt_monto(total_p))
+        for f in p[:7]:
+            lineas.append("  " + f["factura"] + " | " + fmt_monto(f["monto"]) + " | " + fmt_fecha(f["vencimiento"]))
+        if len(p) > 7:
+            lineas.append("  _...y " + str(len(p)-7) + " facturas mas_")
+    if v:
+        if p: lineas.append("")
+        total_v = sum(f["monto"] for f in v)
+        nfac_v = "factura" if len(v)==1 else "facturas"
+        lineas.append("🔴 *Vencidas* (" + str(len(v)) + " " + nfac_v + ") — " + fmt_monto(total_v))
+        for f in v[:7]:
+            lineas.append("  " + f["factura"] + " | " + fmt_monto(f["monto"]) + " | " + fmt_fecha(f["vencimiento"]))
+        if len(v) > 7:
+            lineas.append("  _...y " + str(len(v)-7) + " facturas mas_")
+    lineas.append(hint)
+    return "\n".join(lineas)
+
+
+def formatear_deuda(deuda: dict, nombre: str) -> str:
+    v, p = deuda["vencidas"], deuda["pendientes"]
+    if not v and not p:
+        return f"\u2705 *{nombre}* no tiene facturas pendientes. \u00a1Todo al d\u00eda! \U0001f389\n\n_Escribe *0* o *menu* para volver al menú principal._"
+    total = sum(f["monto"] for f in v + p)
+    lineas = [f"*{nombre}*\n\U0001f4b0 *Total deuda: {fmt_monto(total)}*\n"]
+    if p:
+        total_p = sum(f["monto"] for f in p)
+        lineas.append(f"\U0001f7e1 *Por vencer* ({len(p)} {'factura' if len(p)==1 else 'facturas'}) \u2014 {fmt_monto(total_p)}")
+        for f in p[:7]:
+            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+        if len(p) > 7:
+            lineas.append(f"  _...y {len(p)-7} facturas mas_")
+    if v:
+        if p: lineas.append("")
+        total_v = sum(f["monto"] for f in v)
+        lineas.append(f"\U0001f534 *Vencidas* ({len(v)} {'factura' if len(v)==1 else 'facturas'}) \u2014 {fmt_monto(total_v)}")
+        for f in v[:7]:
+            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
+        if len(v) > 7:
+            lineas.append(f"  _...y {len(v)-7} facturas mas_")
+    lineas.append("\n\n_Escribe *0* o *menu* para volver al menú principal._")
+    return "\n".join(lineas)
+
 def formatear_pedidos(pedidos: list, nombre: str) -> str:
     if not pedidos:
         return f"📋 *{nombre}* no tiene pedidos recientes.\n\n_Escribe *0* o *menu* para volver al menú principal._"
