@@ -463,7 +463,7 @@ def stock_txt(s):
     return str(s)
 
 ALIAS = {"gshock": "g-shock", "g shock": "g-shock", "protreck": "pro trek", "protrek": "pro trek"}
-RUIDO = {"casio","maxell","hay","tienen","quiero","ver","busco","buscar","necesito","dame",
+RUIDO = {"casio","maxell","hay","tienen","quiero","ver","busco","buscar","necesito","dame","pedido","pedidos","orden","ordenes",
          "muestrame","de","del","la","las","los","el","un","una","unos","unas","que","con",
          "para","por","en","y","o","a","me","stock","precio","disponible","disponibles",
          "cuantos","cuanto","cual","tienes","tiene","tenemos","modelo","modelos","producto",
@@ -673,6 +673,15 @@ async def whatsapp_webhook(request: Request):
     usuario   = get_usuario(numero)
     es_admin  = usuario["tipo"] in ("admin", "vendedor")
 
+    # Resetear saludo si pasaron más de 4 horas
+    import time
+    ahora = time.time()
+    ultimo_contacto = sesion.get("ultimo_contacto", 0)
+    if ahora - ultimo_contacto > 14400:  # 4 horas
+        sesion = {k: v for k, v in sesion.items() if k in ("partner_id", "nombre", "rut")}
+    sesiones[numero] = {**sesion, "ultimo_contacto": ahora}
+    sesion = sesiones[numero]
+
     def xe(s): return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     # Detectar gracias y despedidas
@@ -745,8 +754,9 @@ async def whatsapp_webhook(request: Request):
         }
         sesion = sesiones[numero]
 
-    def menu_cliente(nombre: str) -> str:
-        return (f"{saludo_hora()}, *{nombre}*! 👋\n\n"
+    def menu_cliente(nombre: str, primera_vez: bool = False) -> str:
+        saludo = f"{saludo_hora()}, *{nombre}*! 👋" if primera_vez else f"👋 Hola de nuevo, *{nombre}*!"
+        return (f"{saludo}\n\n"
                 "¿En qué te puedo ayudar?\n"
                 "1. 📦 Stock — escribe el producto o código\n"
                 "2. 💳 Cuenta — escribe _cuenta_\n"
@@ -760,7 +770,9 @@ async def whatsapp_webhook(request: Request):
         elif usuario["tipo"] == "vendedor":
             respuesta = bienvenida_admin(usuario["nombre"])
         elif sesion.get("nombre"):
-            respuesta = menu_cliente(sesion["nombre"])
+            primera = not sesion.get("ya_saludo", False)
+            sesiones[numero]["ya_saludo"] = True
+            respuesta = menu_cliente(sesion["nombre"], primera_vez=primera)
         else:
             respuesta = BIENVENIDA_PUBLICA
 
@@ -904,12 +916,27 @@ async def whatsapp_webhook(request: Request):
             respuesta = "⚠️ Ese catálogo no esta disponible en este momento."
         else:
             sesiones[numero] = {**sesion, "esperando_catalogo": False}
-            try:
-                termino = limpiar_termino(body)
-                productos = buscar_productos(termino)
-                respuesta = formatear_wa(productos, termino)
-            except Exception:
-                respuesta = "⚠️ Hubo un error. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
+            # Si escribió pedidos/cuenta/deuda, redirigir al bloque correcto
+            if palabras & PEDIDO:
+                partner_id = sesion.get("partner_id")
+                if partner_id:
+                    pedidos = consultar_pedidos(partner_id)
+                    respuesta = formatear_pedidos(pedidos, sesion.get("nombre",""))
+                else:
+                    respuesta = "Escribe _pedidos de [nombre]_ o el número de pedido."
+            elif palabras & DEUDA:
+                if sesion.get("partner_id"):
+                    deuda = consultar_deuda(sesion["partner_id"])
+                    respuesta = formatear_deuda(deuda, sesion.get("nombre",""))
+                else:
+                    respuesta = "Escribe _cuenta de [nombre]_ o el RUT del cliente."
+            else:
+                try:
+                    termino = limpiar_termino(body)
+                    productos = buscar_productos(termino)
+                    respuesta = formatear_wa(productos, termino)
+                except Exception:
+                    respuesta = "⚠️ Hubo un error. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
 
     # Pedidos
     elif palabras & PEDIDO:
