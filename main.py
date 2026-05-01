@@ -300,12 +300,21 @@ def odoo_connect():
 
 def buscar_productos(termino: str) -> list:
     t = termino.strip().lower()
+    palabras_busqueda = [w for w in t.split() if len(w) > 1]
+
+    def coincide(prod):
+        nombre = prod["nombre"].lower()
+        codigo = prod["codigo"].lower()
+        # Coincidencia exacta del término completo
+        if t in nombre or t in codigo:
+            return True
+        # Todas las palabras deben coincidir (búsqueda multi-palabra)
+        if palabras_busqueda and all(w in nombre or w in codigo for w in palabras_busqueda):
+            return True
+        return False
+
     if _stock_cache:
-        # Buscar en cache
-        resultados = [
-            p for p in _stock_cache.values()
-            if t in p["nombre"].lower() or t in p["codigo"].lower()
-        ]
+        resultados = [p for p in _stock_cache.values() if coincide(p)]
         return sorted(resultados, key=lambda x: x["stock"], reverse=True)[:20]
     # Fallback a Odoo si no hay cache
     uid, models = odoo_connect()
@@ -343,34 +352,6 @@ def consultar_pedidos(partner_id: int, limite: int = 8) -> list:
 def consultar_pedidos_cliente(partner_id: int) -> list:
     """Para clientes: solo los últimos 5"""
     return _pedidos_cache.get(partner_id, [])[:5]
-
-def formatear_deuda(deuda: dict, nombre: str) -> str:
-    v, p = deuda["vencidas"], deuda["pendientes"]
-    hint = "\n\n_Escribe *0* o *menu* para volver al menú principal._"
-    if not v and not p:
-        return "✅ *" + nombre + "* no tiene facturas pendientes. ¡Todo al día! 🎉" + hint
-    total = sum(f["monto"] for f in v + p)
-    lineas = ["💰 *" + nombre + "*\n💰 *Total deuda: " + fmt_monto(total) + "*\n"]
-    if p:
-        total_p = sum(f["monto"] for f in p)
-        nfac_p = "factura" if len(p)==1 else "facturas"
-        lineas.append("🟡 *Por vencer* (" + str(len(p)) + " " + nfac_p + ") — " + fmt_monto(total_p))
-        for f in p[:7]:
-            lineas.append("  " + f["factura"] + " | " + fmt_monto(f["monto"]) + " | " + fmt_fecha(f["vencimiento"]))
-        if len(p) > 7:
-            lineas.append("  _...y " + str(len(p)-7) + " facturas mas_")
-    if v:
-        if p: lineas.append("")
-        total_v = sum(f["monto"] for f in v)
-        nfac_v = "factura" if len(v)==1 else "facturas"
-        lineas.append("🔴 *Vencidas* (" + str(len(v)) + " " + nfac_v + ") — " + fmt_monto(total_v))
-        for f in v[:7]:
-            lineas.append("  " + f["factura"] + " | " + fmt_monto(f["monto"]) + " | " + fmt_fecha(f["vencimiento"]))
-        if len(v) > 7:
-            lineas.append("  _...y " + str(len(v)-7) + " facturas mas_")
-    lineas.append(hint)
-    return "\n".join(lineas)
-
 
 def formatear_deuda(deuda: dict, nombre: str) -> str:
     v, p = deuda["vencidas"], deuda["pendientes"]
@@ -532,6 +513,9 @@ def limpiar_termino(texto: str) -> str:
         return todas[0] if todas else texto.strip()
     codigos = [p for p in palabras if re.search(r"[\d\-]", p)]
     if codigos: return codigos[0]
+    # Si hay múltiples palabras significativas, devolver todas para búsqueda más precisa
+    if len(palabras) > 1:
+        return " ".join(palabras)
     palabra = palabras[0]
     if palabra.endswith("es") and len(palabra) > 4: palabra = palabra[:-2]
     elif palabra.endswith("s") and len(palabra) > 3: palabra = palabra[:-1]
@@ -548,23 +532,6 @@ def formatear_wa(productos: list, termino: str) -> str:
     if len(productos) > 10:
         lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu búsqueda._")
     lineas.append("\n\n_Escribe *0* o *menu* para volver al menú principal._")
-    total = sum(f["monto"] for f in v + p)
-    lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
-    if p:
-        total_p = sum(f["monto"] for f in p)
-        lineas.append(f"🟡 *Por vencer* ({len(p)} {'factura' if len(p)==1 else 'facturas'}) — {fmt_monto(total_p)}")
-        for f in p[:7]:
-            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
-        if len(p) > 7:
-            lineas.append(f"  _...y {len(p)-7} facturas mas_")
-    if v:
-        if p: lineas.append("")
-        total_v = sum(f["monto"] for f in v)
-        lineas.append(f"🔴 *Vencidas* ({len(v)} {'factura' if len(v)==1 else 'facturas'}) — {fmt_monto(total_v)}")
-        for f in v[:7]:
-            lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
-        if len(v) > 7:
-            lineas.append(f"  _...y {len(v)-7} facturas mas_")
     return "\n".join(lineas)
 
 
