@@ -415,31 +415,10 @@ def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
     """Siempre busca en Odoo directamente, no en cache"""
     try:
         uid, models = odoo_connect()
-        # Buscar con el término original y también sin caracteres especiales
-        terminos = [nombre]
-        nombre_limpio = re.sub(r"[^a-z0-9\s]", " ", nombre).strip()
-        if nombre_limpio != nombre:
-            terminos.append(nombre_limpio)
-        
         dominio_base = [["is_company", "=", True], ["active", "=", True]]
-        if len(terminos) == 1:
-            dominio = [["name", "ilike", nombre]] + dominio_base
-        else:
-            dominio = ["|", ["name", "ilike", terminos[0]], ["name", "ilike", terminos[1]]] + dominio_base
-        
-        # Si es vendedor, filtrar solo sus clientes
-        if vendedor_nombre:
-            usuarios = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASS,
-                "res.users", "search_read",
-                [[["name", "ilike", vendedor_nombre]]],
-                {"fields": ["id", "name"], "limit": 3}
-            )
-            if usuarios:
-                user_ids = [u["id"] for u in usuarios]
-                dominio.append(["user_id", "in", user_ids])
-        
-        # Filtrar por vendedor si aplica
+
+        # Filtrar user_id si es vendedor
+        user_ids = []
         if vendedor_nombre:
             usuarios = models.execute_kw(
                 ODOO_DB, uid, ODOO_PASS,
@@ -447,16 +426,42 @@ def buscar_cliente_por_nombre(nombre: str, vendedor_nombre: str = "") -> list:
                 [[["name", "ilike", vendedor_nombre]]],
                 {"fields": ["id"], "limit": 3}
             )
-            if usuarios:
-                user_ids = [u["id"] for u in usuarios]
-                dominio = dominio + [["user_id", "in", user_ids]]
+            user_ids = [u["id"] for u in usuarios]
 
-        partners = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASS,
-            "res.partner", "search_read",
-            [dominio],
-            {"fields": ["id", "name", "vat"], "limit": 5}
-        )
+        def ejecutar_busqueda(dominio_nombre):
+            dom = dominio_nombre + dominio_base
+            if user_ids:
+                dom = dom + [["user_id", "in", user_ids]]
+            return models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.partner", "search_read",
+                [dom],
+                {"fields": ["id", "name", "vat"], "limit": 5}
+            )
+
+        # 1. Buscar frase completa primero
+        partners = ejecutar_busqueda([["name", "ilike", nombre]])
+
+        # 2. Si no encontró y hay múltiples palabras, buscar cada palabra (AND)
+        palabras = [w for w in nombre.split() if len(w) >= 2]
+        if not partners and len(palabras) > 1:
+            dom_palabras = dominio_base[:]
+            for w in palabras:
+                dom_palabras = [["name", "ilike", w]] + dom_palabras
+            if user_ids:
+                dom_palabras = dom_palabras + [["user_id", "in", user_ids]]
+            partners = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASS,
+                "res.partner", "search_read",
+                [dom_palabras],
+                {"fields": ["id", "name", "vat"], "limit": 5}
+            )
+
+        # 3. Si sigue sin resultados y hay varias palabras, buscar por la más larga
+        if not partners and palabras:
+            palabra_principal = max(palabras, key=len)
+            partners = ejecutar_busqueda([["name", "ilike", palabra_principal]])
+
         return [{"id": p["id"], "nombre": p["name"], "rut": p.get("vat","")} for p in partners]
     except Exception as e:
         print(f"Error buscar_cliente_por_nombre: {e}")
@@ -852,12 +857,13 @@ async def whatsapp_webhook(request: Request):
 
         # Sacar frases completas primero, luego palabras sueltas
         texto_sin_deuda = body_norm
-        for frase in ["cuenta de", "deuda de", "factura de", "saldo de"]:
+        for frase in ["cuenta de", "deuda de", "factura de", "saldo de", "estado de cuenta de", "estado de cuenta"]:
             texto_sin_deuda = texto_sin_deuda.replace(frase, "").strip()
         for palabra in sorted(DEUDA, key=len, reverse=True):
-            texto_sin_deuda = texto_sin_deuda.replace(palabra, "").strip()
-        texto_sin_deuda = re.sub(r"^[^a-z0-9]+", "", texto_sin_deuda)
-        texto_sin_deuda = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_deuda).strip()
+            texto_sin_deuda = re.sub(r"\b" + re.escape(palabra) + r"\b", "", texto_sin_deuda).strip()
+        RUIDO_DEUDA = {"estado", "de", "del", "la", "el", "los", "las", "un", "una", "ver", "revisar"}
+        texto_sin_deuda = " ".join(w for w in texto_sin_deuda.split() if w not in RUIDO_DEUDA)
+        texto_sin_deuda = re.sub(r"^[^a-z0-9]+", "", texto_sin_deuda).strip()
 
         if len(texto_sin_deuda) >= 2:
             try:
@@ -962,11 +968,16 @@ async def whatsapp_webhook(request: Request):
     # Pedidos
     elif palabras & PEDIDO:
         texto_sin_pedido = body_norm
-        # Ordenar por largo para reemplazar primero los más largos
+        # Eliminar frases completas primero
+        for frase in ["estado de pedidos de", "estado de pedidos", "pedidos de", "pedido de"]:
+            texto_sin_pedido = texto_sin_pedido.replace(frase, "").strip()
+        # Luego eliminar palabras clave de PEDIDO sueltas
         for p in sorted(PEDIDO, key=len, reverse=True):
-            texto_sin_pedido = texto_sin_pedido.replace(p, "").strip()
-        texto_sin_pedido = re.sub(r"^[^a-z0-9]+", "", texto_sin_pedido)  # quitar caracteres sueltos al inicio
-        texto_sin_pedido = re.sub(r"^(de|del|la|el)\s+", "", texto_sin_pedido).strip()
+            texto_sin_pedido = re.sub(r"\b" + re.escape(p) + r"\b", "", texto_sin_pedido).strip()
+        # Eliminar palabras ruidosas residuales: estado, de, del, la, el, etc.
+        RUIDO_PEDIDO = {"estado", "de", "del", "la", "el", "los", "las", "un", "una"}
+        texto_sin_pedido = " ".join(w for w in texto_sin_pedido.split() if w not in RUIDO_PEDIDO)
+        texto_sin_pedido = re.sub(r"^[^a-z0-9]+", "", texto_sin_pedido).strip()
 
         partner_id = sesion.get("partner_id")
         nombre_cliente = sesion.get("nombre", "")
