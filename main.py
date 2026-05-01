@@ -357,6 +357,7 @@ def formatear_pedidos(pedidos: list, nombre: str) -> str:
             except:
                 fecha = ""
         lineas.append(f"{p['estado']} {p['numero']} | {fecha.replace(' | ', '')}")
+    lineas.append("\n_Escribe *0* para volver al menú._")
     return "\n".join(lineas)
 
 def buscar_cliente_por_rut(rut_normalizado: str) -> dict:
@@ -486,15 +487,15 @@ def limpiar_termino(texto: str) -> str:
 
 def formatear_wa(productos: list, termino: str) -> str:
     if not productos:
-        return (f"😕 No encontré productos para *{termino}*.\n\n"
-                "Intenta con otro termino:\n• _F-91_, _W-800_\n• _calculadora_, _MR-27_\n• _AA_, _AAA_")
+        return (f"😕 No encontré productos para *{termino}*.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl")
     lineas = [f"📦 *{len(productos)} resultado{'s' if len(productos)>1 else ''}* para _{termino}_:\n"]
     for p in productos[:10]:
         entrante = p.get("entrante", 0)
         entrante_txt = f" | 📥 {entrante} en camino" if entrante > 0 else ""
         lineas.append(f"{stock_emoji(p['stock'])} {p['codigo']} | {fmt_monto(int(p['precio']))} | {stock_txt(p['stock'])}{entrante_txt}")
     if len(productos) > 10:
-        lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu busqueda._")
+        lineas.append(f"\n_...y {len(productos)-10} mas. Refina tu búsqueda._")
+    lineas.append("\n_Escribe *0* para volver al menú._")
     return "\n".join(lineas)
 
 def formatear_deuda(deuda: dict, nombre: str) -> str:
@@ -629,12 +630,12 @@ BIENVENIDA_PUBLICA = (
     "📱 +56 9 8549 5930"
 )
 
-MENU_OPCIONES = {"1": "stock", "2": "cuenta", "3": "catalogo", "4": "pedido"}
+MENU_OPCIONES = {"0": "menu", "1": "stock", "2": "cuenta", "3": "catalogo", "4": "pedido"}
 
 SALUDOS  = {"hola","hi","hello","buenas","buenos","buen","hey","ola","saludos"}
 GRACIAS  = {"gracias","thank","thanks","dale","ok","oki","listo","perfecto","excelente","genial","bacán","bacan"}
 DESPEDIDA = {"chao","adios","bye","hasta","nos","vemos","cuidate"}
-AYUDA    = {"ayuda","help","menu","opciones","inicio","start"}
+AYUDA    = {"ayuda","help","menu","opciones","inicio","start","0","*"}
 DEUDA    = {"deuda","cuenta","facturas","factura","saldo","cobro","debo","pendiente","pendientes"}
 CATALOGO = {"catalogo","catalogos","pdf","catalogue"}
 PEDIDO   = {"pedido","pedidos","orden","ordenes","compra","compras"}
@@ -718,7 +719,14 @@ async def whatsapp_webhook(request: Request):
     # Detectar opciones de menú 1, 2, 3
     if body_norm.strip() in MENU_OPCIONES and not sesion.get("esperando_catalogo") and not sesion.get("clientes_lista"):
         opcion = MENU_OPCIONES[body_norm.strip()]
-        if opcion == "stock":
+        if opcion == "menu":
+            if es_admin:
+                respuesta = bienvenida_admin(usuario["nombre"])
+            elif sesion.get("nombre"):
+                respuesta = menu_cliente(sesion["nombre"], primera_vez=False)
+            else:
+                respuesta = BIENVENIDA_PUBLICA
+        elif opcion == "stock":
             respuesta = "📦 Escribe el producto o código que quieres consultar."
         elif opcion == "cuenta":
             if es_admin:
