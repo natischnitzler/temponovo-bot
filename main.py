@@ -332,7 +332,7 @@ ESTADO_PEDIDO = {
     "quotation":  "⏰ Cotizacion",
     "confirmed":  "✔ Confirmado",
     "pick":       "💰 Facturado",
-    "pack":       "📦 Pronto a despachar",
+    "pack":       "📦 Listo para despacho",
     "delivered":  "🚚 Entregado",
     "cancel":     "❌ Cancelado",
 }
@@ -496,7 +496,7 @@ def formatear_wa(productos: list, termino: str) -> str:
 def formatear_deuda(deuda: dict, nombre: str) -> str:
     v, p = deuda["vencidas"], deuda["pendientes"]
     if not v and not p:
-        return f"✅ *{nombre}* no tiene facturas pendientes. Todo al día!"
+        return f"✅ *{nombre}* no tiene facturas pendientes. ¡Todo al día! 🎉"
     total = sum(f["monto"] for f in v + p)
     lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
     if p:
@@ -611,11 +611,11 @@ def bienvenida_admin(nombre: str) -> str:
     return (
         f"{saludo_hora()}, *{nombre}*!\n\n"
         "Puedes consultar:\n"
-        "1. 📦 *Stock* — escribe el producto o codigo\n"
+        "1. 📦 *Stock* — escribe el producto o código\n"
         "2. 💳 *Cuenta* — escribe _cuenta de [cliente]_ o el RUT\n"
         "3. 📂 *Catálogos* — escribe _catálogo_\n"
         "4. 📋 *Estado de pedidos* — escribe _pedidos de [cliente]_ o numero de pedido\n\n"
-        "En que te puedo ayudar?"
+        "¿En qué te puedo ayudar?"
     )
 
 BIENVENIDA_PUBLICA = (
@@ -706,7 +706,7 @@ async def whatsapp_webhook(request: Request):
     if body_norm.strip() in MENU_OPCIONES and not sesion.get("esperando_catalogo") and not sesion.get("clientes_lista"):
         opcion = MENU_OPCIONES[body_norm.strip()]
         if opcion == "stock":
-            respuesta = "📦 Escribe el producto o codigo que quieres consultar."
+            respuesta = "📦 Escribe el producto o código que quieres consultar."
         elif opcion == "cuenta":
             if es_admin:
                 respuesta = "💳 Escribe _cuenta de [nombre]_ o el RUT del cliente."
@@ -749,7 +749,7 @@ async def whatsapp_webhook(request: Request):
             respuesta = bienvenida_admin(usuario["nombre"])
         elif sesion.get("nombre"):
             respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
-                         "En que te puedo ayudar?\n"
+                         "¿En qué te puedo ayudar?\n"
                          "1. 📦 Stock — escribe el producto\n"
                          "2. 💳 Cuenta — escribe _cuenta_\n"
                          "3. 📂 Catálogos — escribe _catálogo_")
@@ -835,7 +835,7 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "clientes_lista": lista5, "contexto_lista": "cuenta"}
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el numero para ver su cuenta."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
+                    respuesta = "No encontré ese cliente. Puedes buscar por nombre o RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"ERROR DEUDA: {e}")
                 respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
@@ -973,7 +973,7 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "contexto": "pedidos"}
                     respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
+                    respuesta = "No encontré ese cliente. Puedes buscar por nombre o RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"Error pedidos: {e}")
                 respuesta = "⚠️ Error al consultar pedidos.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
