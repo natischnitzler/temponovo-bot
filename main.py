@@ -884,7 +884,11 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "clientes_lista": lista5, "contexto_lista": "cuenta"}
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el numero para ver su cuenta."
                 else:
-                    respuesta = "No encontré ese cliente. Puedes buscar por nombre o RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
+                    respuesta = "😕 No encontré ese cliente. Puedes buscar por nombre o RUT.
+
+Contáctate con nuestra oficina si necesitas ayuda
+💬 *Estrella*: +56 9 6292 9654
+🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"ERROR DEUDA: {e}")
                 respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
@@ -1042,7 +1046,11 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "contexto": "pedidos"}
                     respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
-                    respuesta = "No encontré ese cliente. Puedes buscar por nombre o RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
+                    respuesta = "😕 No encontré ese cliente. Puedes buscar por nombre o RUT.
+
+Contáctate con nuestra oficina si necesitas ayuda
+💬 *Estrella*: +56 9 6292 9654
+🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"Error pedidos: {e}")
                 respuesta = "⚠️ Error al consultar pedidos.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
