@@ -918,7 +918,7 @@ async def whatsapp_webhook(request: Request):
 
         if archivo and archivo in catalogos:
             url = catalogos[archivo]
-            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro numero para ver más, o _menu_ para volver a la lista."
+            respuesta = "📎 Aquí va tu catálogo\n\nEscribe otro *número* para ver más, _menu_ para la lista de catálogos o *0* para el menú principal."
             media_url = url
         elif archivo:
             respuesta = "⚠️ Ese catálogo no esta disponible en este momento."
