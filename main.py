@@ -340,6 +340,10 @@ ESTADO_PEDIDO = {
 def consultar_pedidos(partner_id: int, limite: int = 8) -> list:
     return _pedidos_cache.get(partner_id, [])[:limite]
 
+def consultar_pedidos_cliente(partner_id: int) -> list:
+    """Para clientes: solo los últimos 5"""
+    return _pedidos_cache.get(partner_id, [])[:5]
+
 def formatear_pedidos(pedidos: list, nombre: str) -> str:
     if not pedidos:
         return f"📋 *{nombre}* no tiene pedidos recientes."
@@ -501,7 +505,7 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
     lineas = [f"*{nombre}*\n💰 *Total deuda: {fmt_monto(total)}*\n"]
     if p:
         total_p = sum(f["monto"] for f in p)
-        lineas.append(f"🟡 *Por vencer* ({len(p)} facturas) — {fmt_monto(total_p)}")
+        lineas.append(f"🟡 *Por vencer* ({len(p)} {'factura' if len(p)==1 else 'facturas'}) — {fmt_monto(total_p)}")
         for f in p[:7]:
             lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
         if len(p) > 7:
@@ -509,7 +513,7 @@ def formatear_deuda(deuda: dict, nombre: str) -> str:
     if v:
         if p: lineas.append("")
         total_v = sum(f["monto"] for f in v)
-        lineas.append(f"🔴 *Vencidas* ({len(v)} facturas) — {fmt_monto(total_v)}")
+        lineas.append(f"🔴 *Vencidas* ({len(v)} {'factura' if len(v)==1 else 'facturas'}) — {fmt_monto(total_v)}")
         for f in v[:7]:
             lineas.append(f"  {f['factura']} | {fmt_monto(f['monto'])} | {fmt_fecha(f['vencimiento'])}")
         if len(v) > 7:
@@ -741,6 +745,14 @@ async def whatsapp_webhook(request: Request):
         }
         sesion = sesiones[numero]
 
+    def menu_cliente(nombre: str) -> str:
+        return (f"{saludo_hora()}, *{nombre}*! 👋\n\n"
+                "¿En qué te puedo ayudar?\n"
+                "1. 📦 Stock — escribe el producto o código\n"
+                "2. 💳 Cuenta — escribe _cuenta_\n"
+                "3. 📂 Catálogos — escribe _catálogo_\n"
+                "4. 📋 Estado de pedidos — escribe _pedidos_")
+
     # Saludo
     if palabras & SALUDOS and len(body.split()) <= 4:
         if es_admin:
@@ -748,11 +760,7 @@ async def whatsapp_webhook(request: Request):
         elif usuario["tipo"] == "vendedor":
             respuesta = bienvenida_admin(usuario["nombre"])
         elif sesion.get("nombre"):
-            respuesta = (f"👋 Hola de nuevo, *{sesion['nombre']}*!\n\n"
-                         "¿En qué te puedo ayudar?\n"
-                         "1. 📦 Stock — escribe el producto\n"
-                         "2. 💳 Cuenta — escribe _cuenta_\n"
-                         "3. 📂 Catálogos — escribe _catálogo_")
+            respuesta = menu_cliente(sesion["nombre"])
         else:
             respuesta = BIENVENIDA_PUBLICA
 
@@ -760,6 +768,8 @@ async def whatsapp_webhook(request: Request):
     elif palabras & AYUDA:
         if es_admin:
             respuesta = bienvenida_admin(usuario["nombre"])
+        elif sesion.get("nombre"):
+            respuesta = menu_cliente(sesion["nombre"])
         else:
             respuesta = BIENVENIDA_PUBLICA
 
@@ -990,8 +1000,17 @@ async def whatsapp_webhook(request: Request):
     else:
         try:
             termino = limpiar_termino(body)
-            productos = buscar_productos(termino)
-            respuesta = formatear_wa(productos, termino)
+            if not termino or len(termino) < 2:
+                # No entendió — mostrar menú según perfil
+                if es_admin:
+                    respuesta = bienvenida_admin(usuario["nombre"])
+                elif sesion.get("nombre"):
+                    respuesta = menu_cliente(sesion["nombre"])
+                else:
+                    respuesta = BIENVENIDA_PUBLICA
+            else:
+                productos = buscar_productos(termino)
+                respuesta = formatear_wa(productos, termino)
         except Exception:
             respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
 
