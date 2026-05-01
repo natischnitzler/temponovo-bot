@@ -218,9 +218,36 @@ async def cargar_usuarios():
         print(f"Error cargando usuarios: {e}")
 
 def get_usuario(numero_wa: str) -> dict:
-    # numero_wa viene como "whatsapp:+56985495930"
     numero = numero_wa.replace("whatsapp:", "").replace(" ", "")
-    return _usuarios.get(numero, {"tipo": "publico", "nombre": ""})
+    if numero in _usuarios:
+        return _usuarios[numero]
+    # No está en cache — buscar en Odoo directamente
+    try:
+        uid, models = odoo_connect()
+        # Buscar en res.partner (clientes y vendedores)
+        num_limpio = numero.replace("+56", "").replace("+", "")
+        partners = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASS,
+            "res.partner", "search_read",
+            [["|", ["mobile", "like", num_limpio], ["phone", "like", num_limpio]]],
+            {"fields": ["id", "name", "mobile", "phone", "customer_rank", "user_ids"], "limit": 3}
+        )
+        for p in partners:
+            mobile = normalizar_numero(p.get("mobile") or p.get("phone") or "")
+            if mobile == numero:
+                # Es usuario interno (vendedor)?
+                if p.get("user_ids"):
+                    resultado = {"tipo": "vendedor", "nombre": p["name"]}
+                elif p.get("customer_rank", 0) > 0:
+                    resultado = {"tipo": "cliente", "nombre": p["name"], "partner_id": p["id"]}
+                else:
+                    continue
+                _usuarios[numero] = resultado
+                print(f"Usuario encontrado en Odoo: {numero} → {resultado}")
+                return resultado
+    except Exception as e:
+        print(f"Error buscando usuario en Odoo: {e}")
+    return {"tipo": "publico", "nombre": ""}
 
 
 @app.on_event("startup")
@@ -932,7 +959,7 @@ async def whatsapp_webhook(request: Request):
 
         if len(texto_sin_pedido) >= 2:
             try:
-                vendedor_filtro_p = "" if es_admin else usuario.get("nombre","")
+                vendedor_filtro_p = usuario["nombre"] if usuario["tipo"] == "vendedor" else ""
                 print(f"Buscando pedidos cliente: [{texto_sin_pedido}] vendedor: [{vendedor_filtro_p}]")
                 clientes = buscar_cliente_por_nombre(texto_sin_pedido, vendedor_filtro_p)
                 print(f"Pedidos encontrados clientes: {len(clientes)} - {[c['nombre'] for c in clientes]}")
