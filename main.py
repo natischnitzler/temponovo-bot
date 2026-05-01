@@ -759,7 +759,7 @@ async def whatsapp_webhook(request: Request):
             else:
                 respuesta = f"❌ No encontré un cliente con el RUT *{rut_norm}*."
         except Exception:
-            respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+            respuesta = "⚠️ Error al consultar el sistema. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
 
     # Deuda / cuenta
     elif palabras & DEUDA:
@@ -808,16 +808,16 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "clientes_lista": lista5, "contexto_lista": "cuenta"}
                     respuesta = f"Encontré varios clientes:\n{opciones}\n\nEscribe el numero para ver su cuenta."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"ERROR DEUDA: {e}")
-                respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                respuesta = "⚠️ Error al buscar el cliente. Intenta de nuevo o usa el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
         elif sesion.get("partner_id"):
             try:
                 deuda = consultar_deuda(sesion["partner_id"])
                 respuesta = formatear_deuda(deuda, sesion.get("nombre","cliente"))
             except Exception:
-                respuesta = "⚠️ Error al consultar las facturas.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                respuesta = "⚠️ Error al consultar las facturas.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
         else:
             if es_admin:
                 respuesta = "Escribe _cuenta de [nombre del cliente]_ o el RUT del cliente."
@@ -872,7 +872,7 @@ async def whatsapp_webhook(request: Request):
                 productos = buscar_productos(termino)
                 respuesta = formatear_wa(productos, termino)
             except Exception:
-                respuesta = "⚠️ Hubo un error. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                respuesta = "⚠️ Hubo un error. Intenta de nuevo.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
 
     # Pedidos
     elif palabras & PEDIDO:
@@ -932,8 +932,9 @@ async def whatsapp_webhook(request: Request):
 
         if len(texto_sin_pedido) >= 2:
             try:
-                print(f"Buscando pedidos cliente: [{texto_sin_pedido}]")
-                clientes = buscar_cliente_por_nombre(texto_sin_pedido, "" if es_admin else usuario.get("nombre",""))
+                vendedor_filtro_p = "" if es_admin else usuario.get("nombre","")
+                print(f"Buscando pedidos cliente: [{texto_sin_pedido}] vendedor: [{vendedor_filtro_p}]")
+                clientes = buscar_cliente_por_nombre(texto_sin_pedido, vendedor_filtro_p)
                 print(f"Pedidos encontrados clientes: {len(clientes)} - {[c['nombre'] for c in clientes]}")
                 if len(clientes) == 1:
                     c = clientes[0]
@@ -945,10 +946,10 @@ async def whatsapp_webhook(request: Request):
                     sesiones[numero] = {**sesion, "contexto": "pedidos"}
                     respuesta = f"Encontré varios clientes:\n{lista}\n\nEscribe el RUT para ver sus pedidos."
                 else:
-                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                    respuesta = "No encontré ese cliente. Prueba con el RUT.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
             except Exception as e:
                 print(f"Error pedidos: {e}")
-                respuesta = "⚠️ Error al consultar pedidos.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+                respuesta = "⚠️ Error al consultar pedidos.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
         elif partner_id:
             pedidos = consultar_pedidos(partner_id)
             respuesta = formatear_pedidos(pedidos, nombre_cliente)
@@ -965,7 +966,7 @@ async def whatsapp_webhook(request: Request):
             productos = buscar_productos(termino)
             respuesta = formatear_wa(productos, termino)
         except Exception:
-            respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 https://wa.me/56962929654\n🌐 www.temponovo.cl"
+            respuesta = "⚠️ Hubo un error. Intenta de nuevo en un momento.\n\nLo sentimos, no pudimos procesar tu consulta. Contáctate con nuestra oficina y te ayudamos de inmediato\n💬 *Estrella*: +56 9 6292 9654\n🌐 www.temponovo.cl"
 
     print(f"RESP [{usuario['tipo']}]: {respuesta[:200]}")
 
